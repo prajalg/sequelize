@@ -547,9 +547,11 @@ export async function withSqliteForeignKeysOff<T>(
  * Creates a function that can be used to collect bind parameters.
  *
  * @param bind A mutable object to which bind parameters will be added.
+ * @param dialect
  */
 export function createBindParamGenerator(
   bind: Record<string, unknown>,
+  dialect: AbstractDialect,
 ): (value: unknown) => string {
   let i = 0;
 
@@ -558,6 +560,6 @@ export function createBindParamGenerator(
 
     bind[bindName] = value;
 
-    return `$${bindName}`;
+    return dialect.name === 'oracle' ? `:${i}` : `$${bindName}`;
   };
 }

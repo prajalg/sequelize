@@ -431,6 +431,41 @@ export class OracleQueryGenerator extends OracleQueryGeneratorTypeScript {
     return query;
   }
 
+  listRegularTablesQuery(options) {
+    // Base SQL: select schema and table names from ALL_TABLES
+    let query = `
+    SELECT
+      OWNER AS "schema",
+      TABLE_NAME AS "tableName"
+    FROM ALL_TABLES
+    WHERE
+      NESTED = 'NO'
+      AND SECONDARY = 'NO'
+      AND OWNER IN (
+        SELECT USERNAME
+        FROM ALL_USERS
+        WHERE ORACLE_MAINTAINED = 'N'
+  `;
+
+    // Filter for a specific schema if provided
+    if (options?.schema) {
+      query += ` AND USERNAME = ${this.escape(options.schema)}`;
+    }
+
+    query += `)\n`;
+
+    // Exclude internal/system-related table patterns
+    query += `
+      AND TABLE_NAME NOT LIKE 'AQ$%'
+      AND TABLE_NAME NOT LIKE 'DR$%'
+      AND TABLE_NAME NOT LIKE 'NODB_%'
+      AND TABLE_NAME NOT LIKE '%_NESTEDTAB'
+    ORDER BY OWNER, TABLE_NAME
+  `;
+
+    return query;
+  }
+
   dropTableQuery(tableName) {
     return joinSQLFragments([
       'BEGIN ',
@@ -1273,7 +1308,7 @@ export class OracleQueryGenerator extends OracleQueryGeneratorTypeScript {
     let i = Object.keys(bind).length;
 
     return value => {
-      const bindName = `sequelize_${++i}`;
+      const bindName = `${++i}`;
       bind[bindName] = value;
 
       return `:${Object.keys(bind).length + posOffset}`;
