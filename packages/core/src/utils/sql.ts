@@ -551,7 +551,7 @@ export async function withSqliteForeignKeysOff<T>(
  */
 export function createBindParamGenerator(
   bind: Record<string, unknown>,
-  dialect: AbstractDialect,
+  dialect?: AbstractDialect,
 ): (value: unknown) => string {
   let i = 0;
 
@@ -560,6 +560,6 @@ export function createBindParamGenerator(
 
     bind[bindName] = value;
 
-    return dialect.name === 'oracle' ? `:${i}` : `$${bindName}`;
+    return dialect && dialect.name === 'oracle' ? `:${i}` : `$${bindName}`;
   };
 }
