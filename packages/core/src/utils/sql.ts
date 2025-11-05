@@ -553,7 +553,7 @@ export function createBindParamGenerator(
   bind: Record<string, unknown>,
   dialect?: AbstractDialect,
 ): (value: unknown) => string {
-  let i = 0;
+  let i = Object.keys(bind).length;
 
   return (value: unknown): string => {
     const bindName = `sequelize_${++i}`;
