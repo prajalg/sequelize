@@ -207,7 +207,7 @@ export class OracleQuery extends AbstractQuery {
           return [result.outBinds];
         }
 
-        return result.outBinds;
+        return this.formatResults(result);
       } catch (error) {
         throw this.formatError(error);
       } finally {
