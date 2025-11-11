@@ -2,7 +2,10 @@
 
 import type { Sequelize } from '@sequelize/core';
 import { AbstractDialect } from '@sequelize/core';
-import type { SupportableNumericOptions } from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/dialect.js';
+import type {
+  BindCollector,
+  SupportableNumericOptions,
+} from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/dialect.js';
 import { EMPTY_ARRAY } from '@sequelize/utils';
 import { CONNECTION_OPTION_NAMES } from './_internal/connection-options.js';
 import * as DataTypes from './_internal/data-types-overrides';
@@ -108,12 +111,16 @@ export class OracleDialect extends AbstractDialect<OracleDialectOptions, OracleC
     return this.sequelize.options.replication.write.username?.toUpperCase() ?? '';
   }
 
-  createBindCollector() {
+  createBindCollector(): BindCollector {
     const parameterOrder: string[] = [];
 
     return {
       collect(bindParameterName: string) {
         const cachedPosition = parameterOrder.indexOf(bindParameterName);
+        if (!bindParameterName.startsWith('sequelize')) {
+          // parameterOrder.push(bindParameterName);
+          return `:${bindParameterName}`;
+        }
 
         if (cachedPosition === -1) {
           parameterOrder.push(bindParameterName);
