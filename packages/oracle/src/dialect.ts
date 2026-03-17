@@ -2,8 +2,10 @@
 
 import type { Sequelize } from '@sequelize/core';
 import { AbstractDialect } from '@sequelize/core';
-import type { SupportableNumericOptions } from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/dialect.js';
-import { createSpecifiedOrderedBindCollector } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/sql.js';
+import type {
+  BindCollector,
+  SupportableNumericOptions,
+} from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/dialect.js';
 import { EMPTY_ARRAY } from '@sequelize/utils';
 import { CONNECTION_OPTION_NAMES } from './_internal/connection-options.js';
 import * as DataTypes from './_internal/data-types-overrides';
@@ -110,8 +112,24 @@ export class OracleDialect extends AbstractDialect<OracleDialectOptions, OracleC
     return this.sequelize.options.replication.write.username?.toUpperCase() ?? '';
   }
 
-  createBindCollector() {
-    return createSpecifiedOrderedBindCollector(':');
+  createBindCollector(): BindCollector {
+    const parameterOrder: string[] = [];
+    const prefix = ':';
+
+    return {
+      collect(bindParameterName) {
+        const cachedPosition = parameterOrder.indexOf(bindParameterName);
+        parameterOrder.push(bindParameterName);
+        if (cachedPosition === -1) {
+          return `${prefix}${parameterOrder.length}`;
+        }
+
+        return `${prefix}${cachedPosition + 1}`;
+      },
+      getBindParameterOrder() {
+        return parameterOrder;
+      },
+    };
   }
 
   escapeString(val: string): string {

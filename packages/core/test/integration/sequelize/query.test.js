@@ -886,7 +886,24 @@ describe(getTestDialectTeaser('Sequelize'), () => {
         }
       });
 
-      if (!['db2', 'oracle'].includes(dialectName)) {
+      it('binds named parameters in SQL order, not object key order', async function () {
+        const typeCast = dialectName === 'postgres' ? '::int' : '';
+        const result = await this.sequelize.query(
+          `select $name as foo, $id${typeCast} as bar${fromQuery()}`,
+          {
+            raw: true,
+            bind: { id: 42, name: 'john' },
+          },
+        );
+
+        // checks GH Issue #17322 for Oracle
+        const expected = ['db2', 'ibmi', 'oracle'].includes(dialectName)
+          ? [{ FOO: 'john', BAR: 42 }]
+          : [{ foo: 'john', bar: 42 }];
+        expect(result[0]).to.deep.equal(expected);
+      });
+
+      if (dialectName !== 'db2') {
         it('binds named parameters with the passed object using the same key twice', async function () {
           const typeCast = dialectName === 'postgres' ? '::int' : '';
           let logSql;
@@ -900,7 +917,9 @@ describe(getTestDialectTeaser('Sequelize'), () => {
               },
             },
           );
-          if (dialectName === 'ibmi') {
+
+          // checks GH Issue #17322 for Oracle
+          if (['ibmi', 'oracle'].includes(dialectName)) {
             expect(result[0]).to.deep.equal([{ FOO: 1, BAR: 2, BAZ: 1 }]);
           } else {
             expect(result[0]).to.deep.equal([{ foo: 1, bar: 2, baz: 1 }]);

@@ -154,7 +154,7 @@ describe('mapBindParameters', () => {
 
     if (supportsNamedParameters) {
       expect(bindOrder).to.be.null;
-    } else if (dialect.name === 'postgres' || dialect.name === 'oracle') {
+    } else if (dialect.name === 'postgres') {
       expect(bindOrder).to.deep.eq(['id']);
     } else {
       expect(bindOrder).to.deep.eq(['id', 'id', 'id', 'id']);
