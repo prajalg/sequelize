@@ -613,6 +613,11 @@ export class Sequelize<
    * Get the fn for random based on the dialect
    */
   random(): Fn;
+  cosineDistance(column: string, value: number[] | ArrayBufferView): Fn;
+  innerProduct(column: string, value: number[] | ArrayBufferView): Fn;
+  l1Distance(column: string, value: number[] | ArrayBufferView): Fn;
+  l2Distance(column: string, value: number[] | ArrayBufferView): Fn;
+  vectorDistance(column: string, value: number[] | ArrayBufferView): Fn;
 
   /**
    * Execute a query which would set an environment or user variable. The variables are set per connection,

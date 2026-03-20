@@ -619,6 +619,46 @@ Use Sequelize#query if you wish to use replacements.`);
     return fn('RAND');
   }
 
+  cosineDistance(column, value) {
+    if (this.dialect.name === 'oracle') {
+      return fn('COSINE_DISTANCE', column, value);
+    }
+
+    throw new Error(`cosineDistance for dialect "${this.dialect.name}" is not implemented`);
+  }
+
+  innerProduct(column, value) {
+    if (this.dialect.name === 'oracle') {
+      return fn('INNER_PRODUCT', column, value);
+    }
+
+    throw new Error(`innerProduct for dialect "${this.dialect.name}" is not implemented`);
+  }
+
+  l1Distance(column, value) {
+    if (this.dialect.name === 'oracle') {
+      return fn('L1_DISTANCE', column, value);
+    }
+
+    throw new Error(`l1Distance for dialect "${this.dialect.name}" is not implemented`);
+  }
+
+  l2Distance(column, value) {
+    if (this.dialect.name === 'oracle') {
+      return fn('L2_DISTANCE', column, value);
+    }
+
+    throw new Error(`l2Distance for dialect "${this.dialect.name}" is not implemented`);
+  }
+
+  vectorDistance(column, value) {
+    if (this.dialect.name === 'oracle') {
+      return fn('VECTOR_DISTANCE', column, value);
+    }
+
+    throw new Error(`vectorDistance for dialect "${this.dialect.name}" is not implemented`);
+  }
+
   // Global exports
   static Fn = Fn;
   static Col = Col;

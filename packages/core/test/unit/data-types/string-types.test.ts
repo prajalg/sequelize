@@ -214,3 +214,47 @@ See https://sequelize.org/docs/v7/models/data-types/ for a list of supported dat
     });
   });
 });
+
+describe('DataTypes.VECTOR', () => {
+  describe('toSql', () => {
+    testDataTypeSql('VECTOR', DataTypes.VECTOR, {
+      default: new Error(`${dialectName} does not support the VECTOR data type.
+See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
+      oracle: 'VECTOR',
+    });
+
+    testDataTypeSql('VECTOR(4)', DataTypes.VECTOR(4), {
+      default: new Error(`${dialectName} does not support the VECTOR data type.
+See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
+      oracle: 'VECTOR(4, *)',
+    });
+
+    testDataTypeSql("VECTOR(3, 'float32')", DataTypes.VECTOR(3, 'float32'), {
+      default: new Error(`${dialectName} does not support the VECTOR data type.
+See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
+      oracle: 'VECTOR(3, FLOAT32)',
+    });
+  });
+
+  describe('validate', () => {
+    it('should throw an error if value is invalid', () => {
+      const type: DataTypeInstance = DataTypes.VECTOR();
+
+      expect(() => {
+        type.validate('vector');
+      }).to.throw(ValidationErrorItem, "'vector' is not a valid vector");
+    });
+
+    it('should not throw if value is an array', () => {
+      const type: DataTypeInstance = DataTypes.VECTOR();
+
+      expect(() => type.validate([1, 2, 3])).not.to.throw();
+    });
+
+    it('should not throw if value is a typed array', () => {
+      const type: DataTypeInstance = DataTypes.VECTOR();
+
+      expect(() => type.validate(new Float32Array([1, 2, 3]))).not.to.throw();
+    });
+  });
+});

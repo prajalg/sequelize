@@ -2844,6 +2844,102 @@ export class TSVECTOR extends AbstractDataType<string> {
   }
 }
 
+export interface VectorOptions {
+  dimension?: number;
+  format?: string;
+}
+
+export type Vector = number[] | Float32Array | Float64Array | Int8Array | Uint8Array;
+
+/**
+ * The VECTOR type stores vectors.
+ *
+ * Only available for Oracle
+ *
+ * __Fallback policy:__
+ * If this type is not supported, an error will be raised.
+ *
+ * @example
+ * ```ts
+ * DataTypes.VECTOR
+ * DataTypes.VECTOR(1536)
+ * DataTypes.VECTOR(1536, 'float32')
+ * ```
+ *
+ * @category DataTypes
+ */
+export class VECTOR extends AbstractDataType<Vector> {
+  /** @hidden */
+  static readonly [DataTypeIdentifier]: string = 'VECTOR';
+
+  readonly options: VectorOptions;
+
+  constructor();
+  constructor(dimension: number, format?: string);
+  constructor(options: VectorOptions);
+  // we have to define the constructor overloads using tuples due to a TypeScript limitation
+  //  https://github.com/microsoft/TypeScript/issues/29732, to play nice with classToInvokable.
+  /** @hidden */
+  constructor(
+    ...args:
+      | []
+      | [dimension: number]
+      | [dimension: number, format: string]
+      | [options: VectorOptions]
+  );
+  constructor(dimensionOrOptions?: number | VectorOptions, format?: string) {
+    super();
+
+    if (typeof dimensionOrOptions === 'object') {
+      this.options = {
+        ...(dimensionOrOptions.dimension !== undefined
+          ? { dimension: dimensionOrOptions.dimension }
+          : {}),
+        ...(dimensionOrOptions.format !== undefined ? { format: dimensionOrOptions.format } : {}),
+      };
+
+      return;
+    }
+
+    this.options = {
+      ...(dimensionOrOptions !== undefined ? { dimension: dimensionOrOptions } : {}),
+      ...(format !== undefined ? { format } : {}),
+    };
+  }
+
+  validate(value: unknown): asserts value is Vector {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (typeof item !== 'number') {
+          ValidationErrorItem.throwDataTypeValidationError(
+            util.format('%O is not a valid vector', value),
+          );
+        }
+      }
+
+      return;
+    }
+
+    if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+      return;
+    }
+
+    ValidationErrorItem.throwDataTypeValidationError(
+      util.format('%O is not a valid vector', value),
+    );
+  }
+
+  protected _checkOptionSupport(dialect: AbstractDialect) {
+    if (!dialect.supports.dataTypes.VECTOR) {
+      throwUnsupportedDataType(dialect, 'VECTOR');
+    }
+  }
+
+  toSql(): string {
+    return 'VECTOR';
+  }
+}
+
 function rejectBlobs(value: unknown) {
   // We have a DataType called BLOB. People might try to use the built-in Blob type with it, which they cannot.
   // To clarify why it doesn't work, we have a dedicated message for it.

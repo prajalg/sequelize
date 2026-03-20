@@ -7,6 +7,7 @@ import forOwn from 'lodash/forOwn';
 import includes from 'lodash/includes';
 import isPlainObject from 'lodash/isPlainObject';
 import toPath from 'lodash/toPath';
+import util from 'node:util';
 import oracledb from 'oracledb';
 
 import { DataTypes } from '@sequelize/core';
@@ -15,6 +16,8 @@ import {
   ADD_COLUMN_QUERY_SUPPORTABLE_OPTIONS,
   CREATE_TABLE_QUERY_SUPPORTABLE_OPTIONS,
 } from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/query-generator.js';
+import { BaseSqlExpression } from '@sequelize/core/_non-semver-use-at-your-own-risk_/expression-builders/base-sql-expression.js';
+import { conformIndex } from '@sequelize/core/_non-semver-use-at-your-own-risk_/model-internals.js';
 import { rejectInvalidOptions } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/check.js';
 import { quoteIdentifier } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/dialect.js';
 import { joinSQLFragments } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/join-sql-fragments.js';
@@ -24,6 +27,7 @@ import {
   getObjectFromMap,
 } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/object.js';
 import { defaultValueSchemable } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/query-builder-utils.js';
+import { nameIndex } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/string.js';
 import { OracleQueryGeneratorTypeScript } from './query-generator-typescript.internal';
 
 const CREATE_TABLE_QUERY_SUPPORTED_OPTIONS = new Set(['uniqueKeys']);
@@ -403,11 +407,102 @@ export class OracleQueryGenerator extends OracleQueryGeneratorTypeScript {
   @overide
   */
   addIndexQuery(tableName, attributes, options, rawTablename) {
-    if (typeof tableName !== 'string' && attributes.name) {
+    if (typeof tableName !== 'string' && attributes?.name) {
       attributes.name = `${tableName.schema}.${attributes.name}`;
     }
 
-    return super.addIndexQuery(tableName, attributes, options, rawTablename);
+    const vectorRequested =
+      options?.type === 'VECTOR' || (!Array.isArray(attributes) && attributes?.type === 'VECTOR');
+    if (!vectorRequested) {
+      return super.addIndexQuery(tableName, attributes, options, rawTablename);
+    }
+
+    options ||= {};
+
+    if (!Array.isArray(attributes)) {
+      options = attributes;
+      attributes = undefined;
+    } else {
+      options.fields = attributes;
+    }
+
+    options.prefix = options.prefix || rawTablename || tableName;
+    if (options.prefix && typeof options.prefix === 'string') {
+      options.prefix = options.prefix.replaceAll('.', '_');
+      options.prefix = options.prefix.replaceAll(/("|')/g, '');
+    }
+
+    const fieldsSql = options.fields.map(field => {
+      if (field instanceof BaseSqlExpression) {
+        return this.formatSqlExpression(field);
+      }
+
+      if (typeof field === 'string') {
+        field = { name: field };
+      }
+
+      if (field.attribute) {
+        field.name = field.attribute;
+      }
+
+      if (!field.name) {
+        throw new Error(`The following index field has no name: ${util.inspect(field)}`);
+      }
+
+      let result = this.quoteIdentifier(field.name);
+      if (field.order) {
+        result += ` ${field.order}`;
+      }
+
+      return result;
+    });
+
+    if (!options.name) {
+      options = nameIndex(options, options.prefix);
+    }
+
+    options = conformIndex(options);
+    const escapedTableName = this.quoteTable(tableName);
+    options.using ??= 'hnsw';
+
+    const parameters = [];
+    if (options.parameter) {
+      if (options.using === 'hnsw') {
+        parameters.push('type hnsw');
+        if (options.parameter.neighbor) {
+          parameters.push(`neighbor ${options.parameter.neighbor}`);
+        }
+
+        if (options.parameter.efconstruction) {
+          parameters.push(`efconstruction ${options.parameter.efconstruction}`);
+        }
+      } else {
+        parameters.push('type ivf');
+        if (options.parameter.partitions) {
+          parameters.push(`NEIGHBOR PARTITION ${options.parameter.partitions}`);
+        }
+
+        if (options.parameter.samplesPerPartition) {
+          parameters.push(`SAMPLES_PER_PARTITION ${options.parameter.samplesPerPartition}`);
+        }
+
+        if (options.parameter.minVectors) {
+          parameters.push(`MIN_VECTORS_PER_PARTITION ${options.parameter.minVectors}`);
+        }
+      }
+    }
+
+    return joinSQLFragments([
+      'CREATE VECTOR INDEX',
+      this.quoteIdentifiers(options.name),
+      `ON ${escapedTableName}`,
+      `(${fieldsSql.join(', ')})`,
+      'ORGANIZATION',
+      options.using === 'hnsw' ? 'INMEMORY NEIGHBOR GRAPH' : 'NEIGHBOR PARTITION GRAPH',
+      options.distance ? `WITH DISTANCE ${options.distance}` : undefined,
+      options.accuracy ? `WITH TARGET ACCURACY ${options.accuracy}` : undefined,
+      parameters.length > 0 ? `PARAMETERS (${parameters.join(', ')})` : undefined,
+    ]);
   }
 
   // addConstraintQuery(tableName, options) {

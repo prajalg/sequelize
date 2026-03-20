@@ -196,6 +196,7 @@ export type DialectSupports = {
     GEOGRAPHY: boolean;
     HSTORE: boolean;
     TSVECTOR: boolean;
+    VECTOR: boolean;
     CIDR: boolean;
     INET: boolean;
     MACADDR: boolean;
@@ -443,6 +444,7 @@ export abstract class AbstractDialect<
       GEOGRAPHY: false,
       HSTORE: false,
       TSVECTOR: false,
+      VECTOR: false,
       DATETIME: {
         infinity: false,
       },

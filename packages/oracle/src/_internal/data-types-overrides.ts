@@ -417,3 +417,29 @@ export class DATEONLY extends BaseTypes.DATEONLY {
     return options.bindParam(value);
   }
 }
+
+export class VECTOR extends BaseTypes.VECTOR {
+  toSql() {
+    if (this.options.dimension && this.options.format) {
+      return `VECTOR(${this.options.dimension}, ${this.options.format.toUpperCase()})`;
+    }
+
+    if (this.options.dimension) {
+      return `VECTOR(${this.options.dimension}, *)`;
+    }
+
+    return 'VECTOR';
+  }
+
+  toBindableValue(value: BaseTypes.Vector) {
+    if (Array.isArray(value)) {
+      return Float64Array.from(value);
+    }
+
+    return value;
+  }
+
+  _getBindDef(oracledb: Lib) {
+    return { type: oracledb.DB_TYPE_VECTOR };
+  }
+}

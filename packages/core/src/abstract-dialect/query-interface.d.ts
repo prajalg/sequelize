@@ -76,7 +76,7 @@ export interface TableNameWithSchema {
 
 export type TableName = string | TableNameWithSchema;
 
-export type IndexType = AllowLowercase<'UNIQUE' | 'FULLTEXT' | 'SPATIAL'>;
+export type IndexType = AllowLowercase<'UNIQUE' | 'FULLTEXT' | 'SPATIAL' | 'VECTOR'>;
 export type IndexMethod = 'BTREE' | 'HASH' | 'GIST' | 'SPGIST' | 'GIN' | 'BRIN' | string;
 
 export interface IndexField {
@@ -116,7 +116,7 @@ export interface IndexOptions {
   parser?: string | null;
 
   /**
-   * Index type. Only used by mysql. One of `UNIQUE`, `FULLTEXT` and `SPATIAL`
+   * Index type. One of `UNIQUE`, `FULLTEXT`, `SPATIAL`, and `VECTOR` (Oracle only).
    */
   type?: IndexType | undefined;
 
@@ -166,6 +166,27 @@ export interface IndexOptions {
    * Prefix to append to the index name.
    */
   prefix?: string;
+
+  /**
+   * Oracle vector index distance metric.
+   */
+  distance?: string;
+
+  /**
+   * Oracle vector index target accuracy.
+   */
+  accuracy?: number;
+
+  /**
+   * Oracle vector index parameters.
+   */
+  parameter?: {
+    neighbor?: number;
+    efconstruction?: number;
+    partitions?: number;
+    samplesPerPartition?: number;
+    minVectors?: number;
+  };
 
   /**
    * Non-key columns to be added to the lead level of the nonclustered index.
