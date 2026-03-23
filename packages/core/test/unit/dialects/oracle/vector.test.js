@@ -3,6 +3,7 @@
 const util = require('node:util');
 const Support = require('../../../support');
 const { DataTypes, Op, sql } = require('@sequelize/core');
+const { expect } = require('chai');
 
 const expectsql = Support.expectsql;
 const current = Support.sequelize;
@@ -87,12 +88,16 @@ if (current.dialect.name === 'oracle') {
           options = undefined;
         }
 
-        it(`${String(key)}: ${util.inspect(value, { depth: 10 })}${options ? `, ${util.inspect(options)}` : ''}`, () => {
+        const whereObj = sql.where(key, value);
+        it(
+          util.inspect(whereObj, { depth: 4 }) + (options ? `, ${util.inspect(options)}` : ''),
+          () => {
           return expectsql(
-            queryGenerator.whereItemsQuery(sql.where(key, value), options),
+              queryGenerator.whereItemsQuery(whereObj, options),
             expectation,
           );
-        });
+          },
+        );
       };
 
       testsql(
@@ -104,6 +109,46 @@ if (current.dialect.name === 'oracle') {
           oracle: `VECTOR_DISTANCE("embedding", VECTOR('[1,2,3]')) < 2`,
         },
       );
+
+      testsql(
+        sql.fn('VECTOR_DISTANCE', sql.attribute('embedding'), new Float32Array([1, 2, 3])),
+        {
+          [Op.lt]: 2,
+        },
+        {
+          oracle: `VECTOR_DISTANCE("embedding", VECTOR('[1,2,3]')) < 2`,
+        },
+      );
+
+      testsql(
+        sql.fn('VECTOR_DISTANCE', sql.attribute('embedding'), `VECTOR('[1,2,3]')`),
+        {
+          [Op.lt]: 2,
+        },
+        {
+          oracle: `VECTOR_DISTANCE("embedding", VECTOR('[1,2,3]')) < 2`,
+        },
+      );
+
+      it('throws when second argument is not a vector input', () => {
+        expect(() =>
+          queryGenerator.whereItemsQuery(
+            sql.where(sql.fn('VECTOR_DISTANCE', sql.attribute('embedding'), 'not-a-vector'), {
+              [Op.lt]: 2,
+            }),
+          ),
+        ).to.throw(Error, 'Invalid value received for the "where" option');
+      });
+
+      it('throws for malformed VECTOR literal strings', () => {
+        expect(() =>
+          queryGenerator.whereItemsQuery(
+            sql.where(sql.fn('VECTOR_DISTANCE', sql.attribute('embedding'), `VECTR('[1,2,3]')`), {
+              [Op.lt]: 2,
+            }),
+          ),
+        ).to.throw(Error, 'Invalid value received for the "where" option');
+      });
     });
 
     describe('order by distance with limit', () => {

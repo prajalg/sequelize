@@ -90,8 +90,21 @@ export class OracleQueryGeneratorInternal<
       return `VECTOR('[${[...arg].join(',')}]')`;
     }
 
-    if (typeof arg === 'string' && arg.trimStart().toUpperCase().startsWith('VECTOR(')) {
-      return arg;
+    if (typeof arg === 'string') {
+      const trimmed = arg.trim();
+      if (!trimmed.toUpperCase().startsWith('VECTOR(')) {
+        throw new Error(
+          `${fnName} expects the second argument to be a vector array, typed array, or VECTOR literal string`,
+        );
+      }
+
+      const vectorLiteralRegex =
+        /^VECTOR\(\s*'\[\s*(?:[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?\s*(?:,\s*[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?\s*)*)?\]'\s*\)$/i;
+      if (!vectorLiteralRegex.test(trimmed)) {
+        throw new Error(`${fnName} expects a well-formed VECTOR literal string`);
+      }
+
+      return trimmed;
     }
 
     throw new Error(

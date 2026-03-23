@@ -216,6 +216,32 @@ See https://sequelize.org/docs/v7/models/data-types/ for a list of supported dat
 });
 
 describe('DataTypes.VECTOR', () => {
+  describe('constructor', () => {
+    it('stores empty options when no args are passed', () => {
+      const type = DataTypes.VECTOR();
+
+      expect(type.options).to.deep.equal({});
+    });
+
+    it('stores dimension when only dimension is passed', () => {
+      const type = DataTypes.VECTOR(4);
+
+      expect(type.options).to.deep.equal({ dimension: 4 });
+    });
+
+    it('stores dimension and format when both args are passed', () => {
+      const type = DataTypes.VECTOR(3, 'float32');
+
+      expect(type.options).to.deep.equal({ dimension: 3, format: 'float32' });
+    });
+
+    it('supports object-style options', () => {
+      const type = DataTypes.VECTOR({ dimension: 8, format: 'float64' });
+
+      expect(type.options).to.deep.equal({ dimension: 8, format: 'float64' });
+    });
+  });
+
   describe('toSql', () => {
     testDataTypeSql('VECTOR', DataTypes.VECTOR, {
       default: new Error(`${dialectName} does not support the VECTOR data type.
