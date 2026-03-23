@@ -92,10 +92,7 @@ if (current.dialect.name === 'oracle') {
         it(
           util.inspect(whereObj, { depth: 4 }) + (options ? `, ${util.inspect(options)}` : ''),
           () => {
-          return expectsql(
-              queryGenerator.whereItemsQuery(whereObj, options),
-            expectation,
-          );
+            return expectsql(queryGenerator.whereItemsQuery(whereObj, options), expectation);
           },
         );
       };
