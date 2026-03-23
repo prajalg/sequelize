@@ -663,8 +663,7 @@ export class OracleQuery extends AbstractQuery {
   }
 
   isShowIndexesQuery() {
-    // eslint-disable-next-line unicorn/prefer-includes
-    return this.sql.indexOf('SELECT i.index_name,i.table_name, i.column_name, u.uniqueness') > -1;
+    return this.sql.includes('SELECT i.index_name,i.table_name, i.column_name, u.uniqueness');
   }
 
   isSelectCountQuery() {
@@ -678,12 +677,26 @@ export class OracleQuery extends AbstractQuery {
     data.forEach(indexRecord => {
       // We create the object
       if (!acc[indexRecord.INDEX_NAME]) {
+        const oracleIndexType = indexRecord.INDEX_TYPE?.toUpperCase();
+        const oracleIndexImplType = indexRecord.ITYP_NAME?.toUpperCase();
+        let type;
+
+        if (oracleIndexType === 'VECTOR') {
+          type = 'VECTOR';
+        } else if (oracleIndexType === 'DOMAIN' && oracleIndexImplType === 'CONTEXT') {
+          type = 'FULLTEXT';
+        } else if (oracleIndexType === 'NORMAL' || !oracleIndexType) {
+          type = undefined;
+        } else {
+          type = oracleIndexType;
+        }
+
         acc[indexRecord.INDEX_NAME] = {
           unique: indexRecord.UNIQUENESS === 'UNIQUE',
           primary: indexRecord.CONSTRAINT_TYPE === 'P',
           name: indexRecord.INDEX_NAME,
           tableName: indexRecord.TABLE_NAME.toLowerCase(),
-          type: undefined,
+          type,
         };
         acc[indexRecord.INDEX_NAME].fields = [];
       }

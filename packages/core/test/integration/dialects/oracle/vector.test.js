@@ -231,5 +231,46 @@ if (getTestDialect() === 'oracle') {
         expect(row).to.not.equal(null);
       });
     });
+
+    describe('vector indexes', () => {
+      it('creates vector index from model indexes option during sync', async () => {
+        const indexName = 'vector_input_item_embeddings_hnsw_idx';
+        const IndexedItem = sequelize.define(
+          'VectorIndexedItem',
+          {
+            embeddings: DataTypes.VECTOR(3),
+          },
+          {
+            indexes: [
+              {
+                name: indexName,
+                type: 'VECTOR',
+                fields: ['embeddings'],
+                using: 'hnsw',
+                parameter: { neighbor: 8, efconstruction: 32 },
+              },
+            ],
+          },
+        );
+
+        try {
+          await IndexedItem.sync({ force: true });
+
+          const indexes = await sequelize.queryInterface.showIndex(IndexedItem.table);
+          const vectorIndex = indexes.find(
+            index => index.name?.toLowerCase() === indexName.toLowerCase(),
+          );
+
+          expect(vectorIndex).to.not.equal(undefined);
+          expect(vectorIndex.type).to.equal('VECTOR');
+        } finally {
+          try {
+            await sequelize.queryInterface.removeIndex(IndexedItem.table, indexName);
+          } finally {
+            await IndexedItem.drop();
+          }
+        }
+      });
+    });
   });
 }

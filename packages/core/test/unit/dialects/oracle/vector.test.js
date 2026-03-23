@@ -77,6 +77,47 @@ if (current.dialect.name === 'oracle') {
           },
         );
       });
+
+      it('treats non-hnsw using as ivf organization', () => {
+        expectsql(
+          queryGenerator.addIndexQuery('foo', ['vec1'], {
+            type: 'VECTOR',
+            using: 'btree',
+          }),
+          {
+            default:
+              'CREATE VECTOR INDEX "foo_vec1" ON "foo" ("vec1") ORGANIZATION NEIGHBOR PARTITION GRAPH',
+          },
+        );
+      });
+
+      it('ignores ivf parameters when using hnsw', () => {
+        expectsql(
+          queryGenerator.addIndexQuery('foo', ['vec1'], {
+            type: 'VECTOR',
+            using: 'hnsw',
+            parameter: { partitions: 4 },
+          }),
+          {
+            default:
+              'CREATE VECTOR INDEX "foo_vec1" ON "foo" ("vec1") ORGANIZATION INMEMORY NEIGHBOR GRAPH PARAMETERS (type hnsw)',
+          },
+        );
+      });
+
+      it('ignores hnsw parameters when using ivf', () => {
+        expectsql(
+          queryGenerator.addIndexQuery('foo', ['vec1'], {
+            type: 'VECTOR',
+            using: 'ivf',
+            parameter: { neighbor: 8 },
+          }),
+          {
+            default:
+              'CREATE VECTOR INDEX "foo_vec1" ON "foo" ("vec1") ORGANIZATION NEIGHBOR PARTITION GRAPH PARAMETERS (type ivf)',
+          },
+        );
+      });
     });
 
     describe('Vector where clause', () => {
@@ -145,6 +186,20 @@ if (current.dialect.name === 'oracle') {
             }),
           ),
         ).to.throw(Error, 'Invalid value received for the "where" option');
+      });
+
+      it('throws when vector function has too few arguments', () => {
+        expect(() =>
+          queryGenerator.formatSqlExpression(sql.fn('VECTOR_DISTANCE', sql.attribute('embedding'))),
+        ).to.throw(Error, 'VECTOR_DISTANCE expects exactly 2 arguments');
+      });
+
+      it('throws when vector function has too many arguments', () => {
+        expect(() =>
+          queryGenerator.formatSqlExpression(
+            sql.fn('VECTOR_DISTANCE', sql.attribute('embedding'), [1, 2, 3], [4, 5, 6]),
+          ),
+        ).to.throw(Error, 'VECTOR_DISTANCE expects exactly 2 arguments');
       });
     });
 
