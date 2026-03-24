@@ -889,23 +889,23 @@ describe(getTestDialectTeaser('Sequelize'), () => {
       it('binds named parameters in SQL order, not object key order', async function () {
         const typeCast = ['postgres', 'db2'].includes(dialectName) ? '::int' : '';
         const result = await this.sequelize.query(
-          `select $name as foo, $id${typeCast} as bar${fromQuery()}`,
+          `select $second${typeCast} as foo, $first${typeCast} as bar${fromQuery()}`,
           {
             raw: true,
-            bind: { id: 42, name: 'john' },
+            bind: { first: 42, second: 7 },
           },
         );
 
         // checks GH Issue #17322 for Oracle
         const expected = ['db2', 'ibmi', 'oracle'].includes(dialectName)
-          ? [{ FOO: 'john', BAR: 42 }]
-          : [{ foo: 'john', bar: 42 }];
+          ? [{ FOO: 7, BAR: 42 }]
+          : [{ foo: 7, bar: 42 }];
         expect(result[0]).to.deep.equal(expected);
       });
 
       if (dialectName !== 'db2') {
         it('binds named parameters with repeated keys followed by a new key', async function () {
-          const typeCast = ['postgres', 'db2'].includes(dialectName) ? '::int' : '';
+          const typeCast = dialectName === 'postgres' ? '::int' : '';
           const result = await this.sequelize.query(
             `select $one${typeCast} as one, $two${typeCast} as two, $one${typeCast} as one_again, $two${typeCast} as two_again, $three${typeCast} as three${fromQuery()}`,
             {
@@ -926,7 +926,7 @@ describe(getTestDialectTeaser('Sequelize'), () => {
         });
 
         it('binds named parameters with the passed object using the same key twice', async function () {
-          const typeCast = ['postgres', 'db2'].includes(dialectName) ? '::int' : '';
+          const typeCast = dialectName === 'postgres' ? '::int' : '';
           let logSql;
           const result = await this.sequelize.query(
             `select $one${typeCast} as foo, $two${typeCast} as bar, $one${typeCast} as baz${fromQuery()}`,
