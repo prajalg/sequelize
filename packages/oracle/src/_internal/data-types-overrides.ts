@@ -1,12 +1,12 @@
 // Copyright (c) 2025, Oracle and/or its affiliates. All rights reserved
 
-import { BaseError } from '@sequelize/core';
 import type { AbstractDialect, BindParamOptions } from '@sequelize/core';
+import { BaseError } from '@sequelize/core';
 import type { AcceptedDate } from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/data-types.js';
 import * as BaseTypes from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/data-types.js';
 import dayjs from 'dayjs';
-import NodeUtil from 'node:util';
 import utc from 'dayjs/plugin/utc';
+import NodeUtil from 'node:util';
 
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 type Lib = typeof import('oracledb');
@@ -26,10 +26,7 @@ function isMoment(value: any): boolean {
   return Moment?.isMoment(value) ?? false;
 }
 
-function parseOracleJsonValue(
-  value: unknown,
-  options: { allowUnquotedString: boolean },
-): unknown {
+function parseOracleJsonValue(value: unknown, options: { allowUnquotedString: boolean }): unknown {
   if (value == null || typeof value === 'number' || typeof value === 'boolean') {
     return value;
   }
