@@ -887,7 +887,7 @@ describe(getTestDialectTeaser('Sequelize'), () => {
       });
 
       it('binds named parameters in SQL order, not object key order', async function () {
-        const typeCast = dialectName === 'postgres' ? '::int' : '';
+        const typeCast = ['postgres', 'db2'].includes(dialectName) ? '::int' : '';
         const result = await this.sequelize.query(
           `select $name as foo, $id${typeCast} as bar${fromQuery()}`,
           {
@@ -905,7 +905,7 @@ describe(getTestDialectTeaser('Sequelize'), () => {
 
       if (dialectName !== 'db2') {
         it('binds named parameters with repeated keys followed by a new key', async function () {
-          const typeCast = dialectName === 'postgres' ? '::int' : '';
+          const typeCast = ['postgres', 'db2'].includes(dialectName) ? '::int' : '';
           const result = await this.sequelize.query(
             `select $one${typeCast} as one, $two${typeCast} as two, $one${typeCast} as one_again, $two${typeCast} as two_again, $three${typeCast} as three${fromQuery()}`,
             {
@@ -926,7 +926,7 @@ describe(getTestDialectTeaser('Sequelize'), () => {
         });
 
         it('binds named parameters with the passed object using the same key twice', async function () {
-          const typeCast = dialectName === 'postgres' ? '::int' : '';
+          const typeCast = ['postgres', 'db2'].includes(dialectName) ? '::int' : '';
           let logSql;
           const result = await this.sequelize.query(
             `select $one${typeCast} as foo, $two${typeCast} as bar, $one${typeCast} as baz${fromQuery()}`,
