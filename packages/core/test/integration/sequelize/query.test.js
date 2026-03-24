@@ -904,6 +904,27 @@ describe(getTestDialectTeaser('Sequelize'), () => {
       });
 
       if (dialectName !== 'db2') {
+        it('binds named parameters with repeated keys followed by a new key', async function () {
+          const typeCast = dialectName === 'postgres' ? '::int' : '';
+          const result = await this.sequelize.query(
+            `select $one${typeCast} as one, $two${typeCast} as two, $one${typeCast} as one_again, $two${typeCast} as two_again, $three${typeCast} as three${fromQuery()}`,
+            {
+              raw: true,
+              bind: { one: 1, two: 2, three: 3 },
+            },
+          );
+
+          if (['ibmi', 'oracle'].includes(dialectName)) {
+            expect(result[0]).to.deep.equal([
+              { ONE: 1, TWO: 2, ONE_AGAIN: 1, TWO_AGAIN: 2, THREE: 3 },
+            ]);
+          } else {
+            expect(result[0]).to.deep.equal([
+              { one: 1, two: 2, one_again: 1, two_again: 2, three: 3 },
+            ]);
+          }
+        });
+
         it('binds named parameters with the passed object using the same key twice', async function () {
           const typeCast = dialectName === 'postgres' ? '::int' : '';
           let logSql;

@@ -161,6 +161,29 @@ describe('mapBindParameters', () => {
     }
   });
 
+  it('reuses parameter index for repeated bind names and assigns the next index to a new bind name', () => {
+    const { sql, bindOrder } = mapBindParameters(
+      `SELECT $one AS one, $two AS two, $one AS one_again, $two AS two_again, $three AS three`,
+      dialect,
+    );
+
+    expectsql(sql, {
+      default: `SELECT ? AS one, ? AS two, ? AS one_again, ? AS two_again, ? AS three`,
+      postgres: `SELECT $1 AS one, $2 AS two, $1 AS one_again, $2 AS two_again, $3 AS three`,
+      sqlite3: `SELECT $one AS one, $two AS two, $one AS one_again, $two AS two_again, $three AS three`,
+      mssql: `SELECT @one AS one, @two AS two, @one AS one_again, @two AS two_again, @three AS three`,
+      oracle: `SELECT :1 AS one, :2 AS two, :1 AS one_again, :2 AS two_again, :3 AS three`,
+    });
+
+    if (supportsNamedParameters) {
+      expect(bindOrder).to.be.null;
+    } else if (dialect.name === 'postgres') {
+      expect(bindOrder).to.deep.eq(['one', 'two', 'three']);
+    } else {
+      expect(bindOrder).to.deep.eq(['one', 'two', 'one', 'two', 'three']);
+    }
+  });
+
   it('does not consider the token to be a bind parameter if it is part of a $ quoted string', () => {
     const { sql, bindOrder } = mapBindParameters(
       `SELECT * FROM users WHERE id = $tag$ $id $tag$ OR id = $$ $id $$`,

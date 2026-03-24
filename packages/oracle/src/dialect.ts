@@ -114,14 +114,17 @@ export class OracleDialect extends AbstractDialect<OracleDialectOptions, OracleC
 
   createBindCollector(): BindCollector {
     const parameterOrder: string[] = [];
+    const uniqueParameterOrder: string[] = [];
     const prefix = ':';
 
     return {
       collect(bindParameterName) {
-        const cachedPosition = parameterOrder.indexOf(bindParameterName);
         parameterOrder.push(bindParameterName);
+        const cachedPosition = uniqueParameterOrder.indexOf(bindParameterName);
         if (cachedPosition === -1) {
-          return `${prefix}${parameterOrder.length}`;
+          uniqueParameterOrder.push(bindParameterName);
+
+          return `${prefix}${uniqueParameterOrder.length}`;
         }
 
         return `${prefix}${cachedPosition + 1}`;
