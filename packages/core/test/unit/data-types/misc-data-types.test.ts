@@ -325,6 +325,7 @@ describe('DataTypes.JSONB', () => {
       `${dialectName} does not support the JSONB data type.\nSee https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`,
     ),
     postgres: 'JSONB',
+    oracle: 'JSON',
   });
 });
 

@@ -881,7 +881,12 @@ export class OracleQueryGenerator extends OracleQueryGeneratorTypeScript {
 
     if (attribute.type instanceof DataTypes.JSON) {
       template = attribute.type.toSql();
-      template += ` CHECK (${this.quoteIdentifier(options.attributeName)} IS JSON)`;
+
+      // added so that Oracle native JSON (mapped from JSONB) won’t get redundant check
+      // Oracle legacy JSON->BLOB still gets check
+      if (template.toUpperCase() !== 'JSON') {
+        template += ` CHECK (${this.quoteIdentifier(options.attributeName)} IS JSON)`;
+      }
 
       return template;
     }

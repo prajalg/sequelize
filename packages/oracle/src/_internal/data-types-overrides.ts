@@ -1,9 +1,11 @@
 // Copyright (c) 2025, Oracle and/or its affiliates. All rights reserved
 
+import { BaseError } from '@sequelize/core';
 import type { AbstractDialect, BindParamOptions } from '@sequelize/core';
 import type { AcceptedDate } from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/data-types.js';
 import * as BaseTypes from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/data-types.js';
 import dayjs from 'dayjs';
+import NodeUtil from 'node:util';
 import utc from 'dayjs/plugin/utc';
 
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
@@ -22,6 +24,42 @@ try {
 
 function isMoment(value: any): boolean {
   return Moment?.isMoment(value) ?? false;
+}
+
+function parseOracleJsonValue(
+  value: unknown,
+  options: { allowUnquotedString: boolean },
+): unknown {
+  if (value == null || typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+
+  if (Buffer.isBuffer(value)) {
+    return globalThis.JSON.parse(value.toString());
+  }
+
+  if (typeof value === 'string') {
+    try {
+      return globalThis.JSON.parse(value);
+    } catch (error) {
+      if (options.allowUnquotedString) {
+        return value;
+      }
+
+      throw new BaseError(
+        `DataTypes.JSON received a value from the database that is not valid JSON: ${NodeUtil.inspect(value)}.`,
+        { cause: error },
+      );
+    }
+  }
+
+  if (typeof value === 'object') {
+    return value;
+  }
+
+  throw new BaseError(
+    `DataTypes.JSON received a value from the database that it cannot parse: ${NodeUtil.inspect(value)}.`,
+  );
 }
 
 export class STRING extends BaseTypes.STRING {
@@ -354,6 +392,28 @@ export class JSON extends BaseTypes.JSON {
 
   getBindParamSql(value: any, options: BindParamOptions): any {
     return options.bindParam(Buffer.from(globalThis.JSON.stringify(value)));
+  }
+
+  parseDatabaseValue(value: unknown): unknown {
+    return parseOracleJsonValue(value, { allowUnquotedString: false });
+  }
+}
+
+export class JSONB extends BaseTypes.JSONB {
+  protected _checkOptionSupport(): void {
+    // Oracle does not support PostgreSQL-style JSONB operators, but can store JSONB values in a native JSON column.
+  }
+
+  toSql(): string {
+    return 'JSON';
+  }
+
+  _getBindDef(oracledb: Lib) {
+    return { type: oracledb.DB_TYPE_CLOB };
+  }
+
+  parseDatabaseValue(value: unknown): unknown {
+    return parseOracleJsonValue(value, { allowUnquotedString: true });
   }
 }
 

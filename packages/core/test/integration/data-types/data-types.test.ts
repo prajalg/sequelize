@@ -1700,6 +1700,7 @@ describe('DataTypes', () => {
 
   for (const jsonTypeName of ['JSON', 'JSONB'] as const) {
     const JsonType = DataTypes[jsonTypeName];
+    const isOracleJsonbMapped = dialect.name === 'oracle' && jsonTypeName === 'JSONB';
     describe(`DataTypes.${jsonTypeName}`, () => {
       if (dialect.name === 'oracle') {
         before(async function checkOracleVersionForJSONSupport(this: Mocha.Context) {
@@ -1711,7 +1712,7 @@ describe('DataTypes', () => {
         });
       }
 
-      if (!dialect.supports.dataTypes[jsonTypeName]) {
+      if (!dialect.supports.dataTypes[jsonTypeName] && !isOracleJsonbMapped) {
         it('throws, as it is not supported', async () => {
           expect(() => {
             sequelize.define('User', {
@@ -1789,7 +1790,7 @@ describe('DataTypes', () => {
             expect(table.jsonStr.type).to.equal('LONGTEXT');
             break;
           case 'oracle':
-            expect(table.jsonStr.type).to.equal('BLOB');
+            expect(table.jsonStr.type).to.equal(jsonTypeName === 'JSONB' ? 'JSON' : 'BLOB');
             break;
           default:
             expect(table.jsonStr.type).to.equal(jsonTypeName);
@@ -1825,8 +1826,8 @@ describe('DataTypes', () => {
       // - MariaDB 10.4 says it's a string, so we can't parse it based on the type.
       // TODO [2024-06-18]: Re-enable this test when we drop support for MariaDB < 10.5
       //
-      // Oracle JSON is BLOB column and it returns Buffer for raw sql.
-      // When native JSON support is added, this can be removed.
+      // Oracle JSON is a BLOB column and it returns Buffer for raw SQL.
+      // Oracle JSONB is mapped to a native JSON column.
       if (dialect.name !== 'mariadb' && dialect.name !== 'oracle') {
         if (dialect.name === 'mssql' || dialect.name === 'sqlite3') {
           // MSSQL: does not have a JSON type, so we can't parse it if our DataType is not specified.

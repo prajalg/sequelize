@@ -409,9 +409,6 @@ export class OracleQuery extends AbstractQuery {
         return mapValues(row, (value, key) => {
           if (modelDefinition.rawAttributes[key] && modelDefinition.rawAttributes[key].type) {
             let typeid = modelDefinition.rawAttributes[key].type.toLocaleString();
-            if (modelDefinition.rawAttributes[key].type.getDataTypeId() === 'JSON') {
-              value = JSON.parse(value);
-            }
 
             // For some types, the "name" of the type is returned with the length, we remove it
             // For Boolean we skip this because BOOLEAN is mapped to CHAR(1) and we dont' want to
