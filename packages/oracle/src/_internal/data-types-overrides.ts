@@ -406,6 +406,8 @@ export class JSONB extends BaseTypes.JSONB {
   }
 
   _getBindDef(oracledb: Lib) {
+    // can switch to DB_TYPE_JSON with a version/capability check,
+    // but CLOB preserves compatibility for older databases
     return { type: oracledb.DB_TYPE_CLOB };
   }
 
