@@ -680,9 +680,11 @@ export class OracleQuery extends AbstractQuery {
         const oracleIndexType = indexRecord.INDEX_TYPE?.toUpperCase();
         const oracleIndexImplType = indexRecord.ITYP_NAME?.toUpperCase();
         let type;
+        let method;
 
         if (oracleIndexType === 'VECTOR') {
           type = 'VECTOR';
+          method = this.#determineVectorMethod(indexRecord.PARAMETERS_LOWER);
         } else if (oracleIndexType === 'DOMAIN' && oracleIndexImplType === 'CONTEXT') {
           type = 'FULLTEXT';
         } else if (oracleIndexType === 'NORMAL' || !oracleIndexType) {
@@ -697,6 +699,7 @@ export class OracleQuery extends AbstractQuery {
           name: indexRecord.INDEX_NAME,
           tableName: indexRecord.TABLE_NAME.toLowerCase(),
           type,
+          method,
         };
         acc[indexRecord.INDEX_NAME].fields = [];
       }
@@ -732,6 +735,24 @@ export class OracleQuery extends AbstractQuery {
     }
 
     return returnIndexes;
+  }
+
+  // Oracle surfaces vector index configuration as a lower-cased parameter string.
+  // Parse out the declared index type so consumers can see whether the index is IVF or HNSW.
+  #determineVectorMethod(parametersLower) {
+    if (typeof parametersLower !== 'string') {
+      return undefined;
+    }
+
+    if (parametersLower.includes('type ivf')) {
+      return 'ivf';
+    }
+
+    if (parametersLower.includes('type hnsw')) {
+      return 'hnsw';
+    }
+
+    return undefined;
   }
 
   handleInsertQuery(results, metaData) {

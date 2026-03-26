@@ -7,6 +7,7 @@ import type { AddLimitOffsetOptions } from '@sequelize/core/_non-semver-use-at-y
 import { wrapAmbiguousWhere } from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/where-sql-builder.js';
 import type { Cast } from '@sequelize/core/_non-semver-use-at-your-own-risk_/expression-builders/cast.js';
 import type { Fn } from '@sequelize/core/_non-semver-use-at-your-own-risk_/expression-builders/fn.js';
+import util from 'node:util';
 import type { OracleDialect } from './dialect.js';
 
 const VECTOR_FUNCTIONS = new Set([
@@ -78,16 +79,11 @@ export class OracleQueryGeneratorInternal<
 
   #formatVectorArg(arg: unknown, fnName: string): string {
     if (Array.isArray(arg)) {
-      return `VECTOR('[${arg.join(',')}]')`;
+      return this.#formatVectorFromIterable(arg);
     }
 
-    if (
-      arg instanceof Float32Array ||
-      arg instanceof Float64Array ||
-      arg instanceof Int8Array ||
-      arg instanceof Uint8Array
-    ) {
-      return `VECTOR('[${[...arg].join(',')}]')`;
+    if (ArrayBuffer.isView(arg) && !(arg instanceof DataView) && isNumericTypedArray(arg)) {
+      return this.#formatVectorFromIterable(arg);
     }
 
     if (typeof arg === 'string') {
@@ -112,7 +108,47 @@ export class OracleQueryGeneratorInternal<
     );
   }
 
+  // Oracle expects VECTOR('[1,2,3]') literals. Reuse the iterable path for both plain arrays
+  // and typed arrays so we only have one place that generates the comma-separated payload.
+  #formatVectorFromIterable(values: Iterable<number>): string {
+    const parts: number[] = [];
+    for (const item of values) {
+      if (typeof item !== 'number' || Number.isNaN(item)) {
+        throw new Error(`${util.format('%O is not a valid vector element', item)}`);
+      }
+
+      parts.push(item);
+    }
+
+    return `VECTOR('[${parts.join(',')}]')`;
+  }
+
   getAliasToken(): string {
     return '';
   }
+}
+
+function isNumericTypedArray(
+  value: ArrayBufferView,
+): value is
+  | Int8Array
+  | Uint8Array
+  | Uint8ClampedArray
+  | Int16Array
+  | Uint16Array
+  | Int32Array
+  | Uint32Array
+  | Float32Array
+  | Float64Array {
+  return (
+    value instanceof Int8Array ||
+    value instanceof Uint8Array ||
+    value instanceof Uint8ClampedArray ||
+    value instanceof Int16Array ||
+    value instanceof Uint16Array ||
+    value instanceof Int32Array ||
+    value instanceof Uint32Array ||
+    value instanceof Float32Array ||
+    value instanceof Float64Array
+  );
 }

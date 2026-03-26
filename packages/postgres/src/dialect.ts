@@ -113,6 +113,7 @@ export class PostgresDialect extends AbstractDialect<
       JSONB: true,
       HSTORE: true,
       TSVECTOR: true,
+      VECTOR: true,
       CITEXT: true,
       DATETIME: { infinity: true },
       DATEONLY: { infinity: true },
