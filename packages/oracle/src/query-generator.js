@@ -411,8 +411,14 @@ export class OracleQueryGenerator extends OracleQueryGeneratorTypeScript {
       attributes.name = `${tableName.schema}.${attributes.name}`;
     }
 
-    const vectorRequested =
-      options?.type === 'VECTOR' || (!Array.isArray(attributes) && attributes?.type === 'VECTOR');
+    const requestedIndexType =
+      typeof options?.type === 'string' ? options.type.toUpperCase() : undefined;
+    const requestedAttributeType =
+      !Array.isArray(attributes) && typeof attributes?.type === 'string'
+        ? attributes.type.toUpperCase()
+        : undefined;
+
+    const vectorRequested = requestedIndexType === 'VECTOR' || requestedAttributeType === 'VECTOR';
     if (!vectorRequested) {
       return super.addIndexQuery(tableName, attributes, options, rawTablename);
     }
@@ -426,10 +432,18 @@ export class OracleQueryGenerator extends OracleQueryGeneratorTypeScript {
       options.fields = attributes;
     }
 
+    if (typeof options.type === 'string') {
+      options.type = options.type.toUpperCase();
+    }
+
     options.prefix = options.prefix || rawTablename || tableName;
     if (options.prefix && typeof options.prefix === 'string') {
       options.prefix = options.prefix.replaceAll('.', '_');
       options.prefix = options.prefix.replaceAll(/("|')/g, '');
+    }
+
+    if (!options.fields || options.fields.length === 0) {
+      throw new Error('Vector indexes require at least one indexed field.');
     }
 
     const fieldsSql = options.fields.map(field => {
@@ -463,11 +477,15 @@ export class OracleQueryGenerator extends OracleQueryGeneratorTypeScript {
 
     options = conformIndex(options);
     const escapedTableName = this.quoteTable(tableName);
-    options.using ??= 'hnsw';
+
+    const normalizedUsing =
+      typeof options.using === 'string' ? options.using.toLowerCase() : undefined;
+    const using = normalizedUsing ?? 'hnsw';
+    const usingIsHnsw = using === 'hnsw';
 
     const parameters = [];
     if (options.parameter) {
-      if (options.using === 'hnsw') {
+      if (usingIsHnsw) {
         parameters.push('type hnsw');
         if (options.parameter.neighbor) {
           parameters.push(`neighbor ${options.parameter.neighbor}`);
@@ -498,7 +516,7 @@ export class OracleQueryGenerator extends OracleQueryGeneratorTypeScript {
       `ON ${escapedTableName}`,
       `(${fieldsSql.join(', ')})`,
       'ORGANIZATION',
-      options.using === 'hnsw' ? 'INMEMORY NEIGHBOR GRAPH' : 'NEIGHBOR PARTITION GRAPH',
+      usingIsHnsw ? 'INMEMORY NEIGHBOR GRAPH' : 'NEIGHBOR PARTITION GRAPH',
       options.distance ? `WITH DISTANCE ${options.distance}` : undefined,
       options.accuracy ? `WITH TARGET ACCURACY ${options.accuracy}` : undefined,
       parameters.length > 0 ? `PARAMETERS (${parameters.join(', ')})` : undefined,

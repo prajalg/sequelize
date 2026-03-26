@@ -3,6 +3,7 @@
 const util = require('node:util');
 const Support = require('../../../support');
 const { DataTypes, Op, sql } = require('@sequelize/core');
+const { OracleQuery } = require('@sequelize/oracle');
 const { expect } = require('chai');
 
 const expectsql = Support.expectsql;
@@ -63,6 +64,13 @@ if (current.dialect.name === 'oracle') {
         });
       });
 
+      it('accepts lowercase vector type', () => {
+        expectsql(queryGenerator.addIndexQuery('Foo', ['vec1'], { type: 'vector' }), {
+          default:
+            'CREATE VECTOR INDEX "foo_vec1" ON "Foo" ("vec1") ORGANIZATION INMEMORY NEIGHBOR GRAPH',
+        });
+      });
+
       it('ivf with parameters and target accuracy', () => {
         expectsql(
           queryGenerator.addIndexQuery('foo', ['vec1'], {
@@ -83,6 +91,32 @@ if (current.dialect.name === 'oracle') {
           queryGenerator.addIndexQuery('foo', ['vec1'], {
             type: 'VECTOR',
             using: 'btree',
+          }),
+          {
+            default:
+              'CREATE VECTOR INDEX "foo_vec1" ON "foo" ("vec1") ORGANIZATION NEIGHBOR PARTITION GRAPH',
+          },
+        );
+      });
+
+      it('accepts uppercase using value', () => {
+        expectsql(
+          queryGenerator.addIndexQuery('foo', ['vec1'], {
+            type: 'VECTOR',
+            using: 'HNSW',
+          }),
+          {
+            default:
+              'CREATE VECTOR INDEX "foo_vec1" ON "foo" ("vec1") ORGANIZATION INMEMORY NEIGHBOR GRAPH',
+          },
+        );
+      });
+
+      it('accepts uppercase ivf using value', () => {
+        expectsql(
+          queryGenerator.addIndexQuery('foo', ['vec1'], {
+            type: 'vector',
+            using: 'IVF',
           }),
           {
             default:
@@ -117,6 +151,77 @@ if (current.dialect.name === 'oracle') {
               'CREATE VECTOR INDEX "foo_vec1" ON "foo" ("vec1") ORGANIZATION NEIGHBOR PARTITION GRAPH PARAMETERS (type ivf)',
           },
         );
+      });
+
+      it('throws when no fields are provided', () => {
+        expect(() => queryGenerator.addIndexQuery('foo', [], { type: 'VECTOR' })).to.throw(
+          Error,
+          'Vector indexes require at least one indexed field.',
+        );
+      });
+    });
+
+    describe('showIndex metadata', () => {
+      const buildQuery = () => new OracleQuery({}, current, {});
+
+      it('reports vector method hnsw', () => {
+        const query = buildQuery();
+        const rows = [
+          {
+            INDEX_NAME: 'IDX_HNSW',
+            INDEX_TYPE: 'VECTOR',
+            ITYP_NAME: null,
+            UNIQUENESS: 'NONUNIQUE',
+            CONSTRAINT_TYPE: null,
+            TABLE_NAME: 'FOO',
+            COLUMN_NAME: 'EMBEDDING',
+            DESCEND: null,
+            PARAMETERS_LOWER: 'type hnsw neighbor 10',
+          },
+        ];
+
+        const result = query.handleShowIndexesQuery(rows);
+        expect(result[0].method).to.equal('hnsw');
+      });
+
+      it('reports vector method ivf', () => {
+        const query = buildQuery();
+        const rows = [
+          {
+            INDEX_NAME: 'IDX_IVF',
+            INDEX_TYPE: 'VECTOR',
+            ITYP_NAME: null,
+            UNIQUENESS: 'NONUNIQUE',
+            CONSTRAINT_TYPE: null,
+            TABLE_NAME: 'FOO',
+            COLUMN_NAME: 'EMBEDDING',
+            DESCEND: null,
+            PARAMETERS_LOWER: 'type ivf neighbor partition 8',
+          },
+        ];
+
+        const result = query.handleShowIndexesQuery(rows);
+        expect(result[0].method).to.equal('ivf');
+      });
+
+      it('leaves method undefined when parameters missing', () => {
+        const query = buildQuery();
+        const rows = [
+          {
+            INDEX_NAME: 'IDX_UNKNOWN',
+            INDEX_TYPE: 'VECTOR',
+            ITYP_NAME: null,
+            UNIQUENESS: 'NONUNIQUE',
+            CONSTRAINT_TYPE: null,
+            TABLE_NAME: 'FOO',
+            COLUMN_NAME: 'EMBEDDING',
+            DESCEND: null,
+            PARAMETERS_LOWER: null,
+          },
+        ];
+
+        const result = query.handleShowIndexesQuery(rows);
+        expect(result[0].method).to.equal(undefined);
       });
     });
 

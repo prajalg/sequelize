@@ -2849,12 +2849,28 @@ export interface VectorOptions {
   format?: string;
 }
 
-export type Vector = number[] | Float32Array | Float64Array | Int8Array | Uint8Array;
+type TypedArrayView =
+  | Int8Array
+  | Uint8Array
+  | Uint8ClampedArray
+  | Int16Array
+  | Uint16Array
+  | Int32Array
+  | Uint32Array
+  | Float32Array
+  | Float64Array
+  | BigInt64Array
+  | BigUint64Array;
+
+// Dialects may accept plain arrays or any numeric typed array. The generic validator
+// inspects ArrayBufferView instances without having to enumerate every concrete type here.
+export type Vector = number[] | ArrayBufferView;
 
 /**
- * The VECTOR type stores vectors.
+ * The VECTOR type stores ordered numeric vectors.
  *
- * Only available for Oracle
+ * Availability depends on the dialect (for example Oracle, Snowflake, pgvector, ...); check your dialect’s
+ * documentation to confirm supported element formats and dimensions.
  *
  * __Fallback policy:__
  * If this type is not supported, an error will be raised.
@@ -2908,19 +2924,12 @@ export class VECTOR extends AbstractDataType<Vector> {
   }
 
   validate(value: unknown): asserts value is Vector {
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (typeof item !== 'number') {
-          ValidationErrorItem.throwDataTypeValidationError(
-            util.format('%O is not a valid vector', value),
-          );
-        }
+    const iterable = this._getVectorIterable(value);
+    if (iterable) {
+      for (const item of iterable) {
+        this._validateVectorElement(item);
       }
 
-      return;
-    }
-
-    if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
       return;
     }
 
@@ -2929,15 +2938,76 @@ export class VECTOR extends AbstractDataType<Vector> {
     );
   }
 
+  // Dialects override this hook if they need to coerce custom container types into an iterable sequence.
+  protected _getVectorIterable(value: unknown): Iterable<unknown> | null {
+    if (Array.isArray(value)) {
+      return value;
+    }
+
+    if (isTypedArrayView(value)) {
+      return value;
+    }
+
+    return null;
+  }
+
+  // Returns the validated numeric value so dialect overrides can add additional checks
+  // (integer-only, finite only, etc.) while still reusing the base logic.
+  protected _validateVectorElement(item: unknown): number {
+    if (typeof item !== 'number' || Number.isNaN(item)) {
+      ValidationErrorItem.throwDataTypeValidationError(
+        util.format('%O is not a valid vector', item),
+      );
+    }
+
+    return item;
+  }
+
   protected _checkOptionSupport(dialect: AbstractDialect) {
     if (!dialect.supports.dataTypes.VECTOR) {
       throwUnsupportedDataType(dialect, 'VECTOR');
     }
   }
 
-  toSql(): string {
-    return 'VECTOR';
+  protected getSqlOptionParts(): string[] {
+    const parts: string[] = [];
+
+    if (this.options.dimension !== undefined) {
+      parts.push(String(this.options.dimension));
+    }
+
+    if (this.options.format !== undefined) {
+      parts.push(this.options.format.toUpperCase());
+    }
+
+    return parts;
   }
+
+  toSql(): string {
+    const optionParts = this.getSqlOptionParts();
+
+    if (optionParts.length === 0) {
+      return 'VECTOR';
+    }
+
+    return `VECTOR(${optionParts.join(', ')})`;
+  }
+}
+
+function isTypedArrayView(value: unknown): value is TypedArrayView {
+  return (
+    value instanceof Int8Array ||
+    value instanceof Uint8Array ||
+    value instanceof Uint8ClampedArray ||
+    value instanceof Int16Array ||
+    value instanceof Uint16Array ||
+    value instanceof Int32Array ||
+    value instanceof Uint32Array ||
+    value instanceof Float32Array ||
+    value instanceof Float64Array ||
+    value instanceof BigInt64Array ||
+    value instanceof BigUint64Array
+  );
 }
 
 function rejectBlobs(value: unknown) {

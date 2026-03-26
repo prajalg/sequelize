@@ -620,43 +620,35 @@ Use Sequelize#query if you wish to use replacements.`);
   }
 
   cosineDistance(column, value) {
-    if (this.dialect.name === 'oracle') {
-      return fn('COSINE_DISTANCE', column, value);
-    }
-
-    throw new Error(`cosineDistance for dialect "${this.dialect.name}" is not implemented`);
+    return this.#vectorSimilarityFn('COSINE_DISTANCE', column, value);
   }
 
   innerProduct(column, value) {
-    if (this.dialect.name === 'oracle') {
-      return fn('INNER_PRODUCT', column, value);
-    }
-
-    throw new Error(`innerProduct for dialect "${this.dialect.name}" is not implemented`);
+    return this.#vectorSimilarityFn('INNER_PRODUCT', column, value);
   }
 
   l1Distance(column, value) {
-    if (this.dialect.name === 'oracle') {
-      return fn('L1_DISTANCE', column, value);
-    }
-
-    throw new Error(`l1Distance for dialect "${this.dialect.name}" is not implemented`);
+    return this.#vectorSimilarityFn('L1_DISTANCE', column, value);
   }
 
   l2Distance(column, value) {
-    if (this.dialect.name === 'oracle') {
-      return fn('L2_DISTANCE', column, value);
-    }
-
-    throw new Error(`l2Distance for dialect "${this.dialect.name}" is not implemented`);
+    return this.#vectorSimilarityFn('L2_DISTANCE', column, value);
   }
 
   vectorDistance(column, value) {
-    if (this.dialect.name === 'oracle') {
-      return fn('VECTOR_DISTANCE', column, value);
+    return this.#vectorSimilarityFn('VECTOR_DISTANCE', column, value);
+  }
+
+  #vectorSimilarityFn(fnName, column, value) {
+    // Each dialect that advertises VECTOR support is expected to translate this generic function
+    // name in its query generator. If the dialect does not support vectors we fail fast here.
+    if (!this.dialect.supports?.dataTypes?.VECTOR) {
+      throw new Error(
+        `${fnName.toLowerCase()} for dialect "${this.dialect.name}" is not implemented`,
+      );
     }
 
-    throw new Error(`vectorDistance for dialect "${this.dialect.name}" is not implemented`);
+    return fn(fnName, column, value);
   }
 
   // Global exports
