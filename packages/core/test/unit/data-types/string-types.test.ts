@@ -247,6 +247,8 @@ describe('DataTypes.VECTOR', () => {
       default: new Error(`${dialectName} does not support the VECTOR data type.
 See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
       oracle: 'VECTOR',
+      postgres: 'VECTOR',
+      snowflake: new Error('Snowflake VECTOR requires a positive integer "dimension" option.'),
     });
 
     testDataTypeSql('VECTOR(4)', DataTypes.VECTOR(4), {
