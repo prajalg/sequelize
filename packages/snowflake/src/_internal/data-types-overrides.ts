@@ -126,7 +126,7 @@ export class VECTOR extends BaseTypes.VECTOR {
     }
   }
 
-  protected getSqlOptionParts(): string[] {
+  protected _getSqlOptionParts(): string[] {
     return [this.#elementType, String(this.options.dimension)];
   }
 

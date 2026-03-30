@@ -294,10 +294,6 @@ export class GEOGRAPHY extends BaseTypes.GEOGRAPHY {
 }
 
 export class VECTOR extends BaseTypes.VECTOR {
-  protected getSqlOptionParts(): string[] {
-    return this.options.dimension != null ? [String(this.options.dimension)] : [];
-  }
-
   protected _checkOptionSupport(dialect: AbstractDialect): void {
     super._checkOptionSupport(dialect);
 
