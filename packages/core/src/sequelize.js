@@ -640,8 +640,8 @@ Use Sequelize#query if you wish to use replacements.`);
   }
 
   #vectorSimilarityFn(fnName, column, value) {
-    // Each dialect that advertises VECTOR support is expected to translate this generic function
-    // name in its query generator. If the dialect does not support vectors we fail fast here.
+    // Dialects that advertise VECTOR support can translate these generic helper names in their
+    // query generator. Oracle is the primary implementation; other dialects may follow this pattern.
     if (!this.dialect.supports?.dataTypes?.VECTOR) {
       throw new Error(
         `${fnName.toLowerCase()} for dialect "${this.dialect.name}" is not implemented`,

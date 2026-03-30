@@ -127,8 +127,8 @@ export class SnowflakeQueryGeneratorInternal<
   }
 }
 
-// Map the dialect-agnostic helper names exposed on Sequelize to the corresponding
-// Snowflake functions. Any new helper can plug into this table without touching the formatter.
+// Sample cross-dialect implementation: Snowflake can translate the generic Sequelize helper names
+// to its own vector functions without changing the shared API surface.
 const SNOWFLAKE_VECTOR_FUNCTION_MAP = new Map<string, (column: string, vector: string) => string>([
   ['COSINE_DISTANCE', (column, vector) => `1 - VECTOR_COSINE_SIMILARITY(${column}, ${vector})`],
   ['INNER_PRODUCT', (column, vector) => `VECTOR_INNER_PRODUCT(${column}, ${vector})`],

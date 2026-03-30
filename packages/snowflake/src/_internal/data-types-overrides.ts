@@ -127,6 +127,8 @@ export class VECTOR extends BaseTypes.VECTOR {
   }
 
   protected _getSqlOptionParts(): string[] {
+    // Sample cross-dialect implementation: Snowflake needs VECTOR(type, dimension),
+    // so it overrides the shared SQL option hook instead of replacing toSql().
     return [this.#elementType, String(this.options.dimension)];
   }
 

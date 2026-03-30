@@ -138,7 +138,8 @@ function isNumericTypedArray(
   );
 }
 
-// Map Sequelize's dialect-agnostic helper names onto the pgvector function surface.
+// Sample cross-dialect implementation: pgvector can map the generic Sequelize helper names
+// onto its own function surface without changing the shared API.
 const POSTGRES_VECTOR_FUNCTION_MAP = new Map<string, string>([
   ['COSINE_DISTANCE', 'vector_cosine_distance'],
   ['INNER_PRODUCT', 'vector_inner_product'],

@@ -294,6 +294,8 @@ export class GEOGRAPHY extends BaseTypes.GEOGRAPHY {
 }
 
 export class VECTOR extends BaseTypes.VECTOR {
+  // Sample cross-dialect implementation: pgvector can reuse the shared VECTOR type and only
+  // add the pgvector-specific validation rules it cares about.
   protected _checkOptionSupport(dialect: AbstractDialect): void {
     super._checkOptionSupport(dialect);
 
