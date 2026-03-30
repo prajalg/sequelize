@@ -419,16 +419,12 @@ export class DATEONLY extends BaseTypes.DATEONLY {
 }
 
 export class VECTOR extends BaseTypes.VECTOR {
-  toSql() {
-    if (this.options.dimension && this.options.format) {
-      return `VECTOR(${this.options.dimension}, ${this.options.format.toUpperCase()})`;
+  protected _getSqlOptionParts(): string[] {
+    if (this.options.dimension == null) {
+      return [];
     }
 
-    if (this.options.dimension) {
-      return `VECTOR(${this.options.dimension}, *)`;
-    }
-
-    return 'VECTOR';
+    return [String(this.options.dimension), this.options.format?.toUpperCase() ?? '*'];
   }
 
   toBindableValue(value: BaseTypes.Vector) {

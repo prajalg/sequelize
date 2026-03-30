@@ -2969,7 +2969,8 @@ export class VECTOR extends AbstractDataType<Vector> {
     }
   }
 
-  protected getSqlOptionParts(): string[] {
+  // Dialects can override this hook to customize VECTOR SQL rendering without replacing toSql().
+  protected _getSqlOptionParts(): string[] {
     const parts: string[] = [];
 
     if (this.options.dimension !== undefined) {
@@ -2984,7 +2985,7 @@ export class VECTOR extends AbstractDataType<Vector> {
   }
 
   toSql(): string {
-    const optionParts = this.getSqlOptionParts();
+    const optionParts = this._getSqlOptionParts();
 
     if (optionParts.length === 0) {
       return 'VECTOR';

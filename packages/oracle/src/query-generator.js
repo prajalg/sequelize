@@ -411,12 +411,10 @@ export class OracleQueryGenerator extends OracleQueryGeneratorTypeScript {
       attributes.name = `${tableName.schema}.${attributes.name}`;
     }
 
-    const requestedIndexType =
-      typeof options?.type === 'string' ? options.type.toUpperCase() : undefined;
-    const requestedAttributeType =
-      !Array.isArray(attributes) && typeof attributes?.type === 'string'
-        ? attributes.type.toUpperCase()
-        : undefined;
+    const requestedIndexType = toUpperCaseIfString(options?.type);
+    const requestedAttributeType = !Array.isArray(attributes)
+      ? toUpperCaseIfString(attributes?.type)
+      : undefined;
 
     const vectorRequested = requestedIndexType === 'VECTOR' || requestedAttributeType === 'VECTOR';
     if (!vectorRequested) {
@@ -432,8 +430,8 @@ export class OracleQueryGenerator extends OracleQueryGeneratorTypeScript {
       options.fields = attributes;
     }
 
-    if (typeof options.type === 'string') {
-      options.type = options.type.toUpperCase();
+    if (requestedIndexType) {
+      options.type = requestedIndexType;
     }
 
     options.prefix = options.prefix || rawTablename || tableName;
@@ -478,9 +476,7 @@ export class OracleQueryGenerator extends OracleQueryGeneratorTypeScript {
     options = conformIndex(options);
     const escapedTableName = this.quoteTable(tableName);
 
-    const normalizedUsing =
-      typeof options.using === 'string' ? options.using.toLowerCase() : undefined;
-    const using = normalizedUsing ?? 'hnsw';
+    const using = toLowerCaseIfString(options.using) ?? 'hnsw';
     const usingIsHnsw = using === 'hnsw';
 
     const parameters = [];
@@ -1275,6 +1271,14 @@ export class OracleQueryGenerator extends OracleQueryGeneratorTypeScript {
       return `:${Object.keys(bind).length + posOffset}`;
     };
   }
+}
+
+function toUpperCaseIfString(value) {
+  return typeof value === 'string' ? value.toUpperCase() : undefined;
+}
+
+function toLowerCaseIfString(value) {
+  return typeof value === 'string' ? value.toLowerCase() : undefined;
 }
 
 /* istanbul ignore next */
