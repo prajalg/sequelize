@@ -247,7 +247,6 @@ describe('DataTypes.VECTOR', () => {
       default: new Error(`${dialectName} does not support the VECTOR data type.
 See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
       oracle: 'VECTOR',
-      postgres: 'VECTOR',
       snowflake: new Error('Snowflake VECTOR requires a positive integer "dimension" option.'),
     });
 
@@ -256,15 +255,15 @@ See https://sequelize.org/docs/v7/models/data-types/ for a list of supported dat
 See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
       oracle: 'VECTOR(4, *)',
       snowflake: 'VECTOR(FLOAT, 4)',
-      postgres: 'VECTOR(4)',
     });
 
     testDataTypeSql("VECTOR(3, 'float32')", DataTypes.VECTOR(3, 'float32'), {
       default: new Error(`${dialectName} does not support the VECTOR data type.
 See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
       oracle: 'VECTOR(3, FLOAT32)',
-      snowflake: new Error('Snowflake VECTOR format "float32" is not supported. Use "FLOAT" or "INT".'),
-      postgres: 'VECTOR(3)',
+      snowflake: new Error(
+        'Snowflake VECTOR format "float32" is not supported. Use "FLOAT" or "INT".',
+      ),
     });
   });
 

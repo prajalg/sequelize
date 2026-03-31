@@ -1,5 +1,4 @@
 import type { AbstractDialect, Rangable } from '@sequelize/core';
-import { ValidationErrorItem } from '@sequelize/core';
 import { attributeTypeToSql } from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/data-types-utils.js';
 import type {
   AbstractDataType,
@@ -11,7 +10,6 @@ import * as BaseTypes from '@sequelize/core/_non-semver-use-at-your-own-risk_/ab
 import { inspect, isBigInt, isNumber, isString } from '@sequelize/utils';
 import identity from 'lodash/identity.js';
 import assert from 'node:assert';
-import util from 'node:util';
 import wkx from 'wkx';
 import { PostgresQueryGenerator } from '../query-generator';
 import { stringifyHstore } from './hstore.js';
@@ -291,75 +289,6 @@ export class GEOGRAPHY extends BaseTypes.GEOGRAPHY {
   getBindParamSql(value: AcceptableTypeOf<BaseTypes.GEOGRAPHY>, options: BindParamOptions) {
     return `ST_GeomFromGeoJSON(${options.bindParam(value)})`;
   }
-}
-
-export class VECTOR extends BaseTypes.VECTOR {
-  // Sample cross-dialect implementation: pgvector can reuse the shared VECTOR type and only
-  // add the pgvector-specific validation rules it cares about.
-  protected _checkOptionSupport(dialect: AbstractDialect): void {
-    super._checkOptionSupport(dialect);
-
-    if (this.options.format) {
-      dialect.warnDataTypeIssue(
-        `${dialect.name} VECTOR ignores the "format" option; pgvector stores values as float vectors.`,
-      );
-      delete this.options.format;
-    }
-  }
-
-  validate(value: unknown): asserts value is BaseTypes.Vector {
-    super.validate(value);
-
-    const dimension = this.options.dimension;
-    if (dimension == null) {
-      return;
-    }
-
-    const length = getVectorLength(value);
-    if (length !== dimension) {
-      ValidationErrorItem.throwDataTypeValidationError(
-        util.format('VECTOR expects values of length %d, but received %d', dimension, length),
-      );
-    }
-  }
-
-  // pgvector requires finite float values. By reusing the base element validation
-  // we ensure we still reject non-number inputs before applying the pgvector-specific rules.
-  protected _validateVectorElement(item: unknown): number {
-    const numeric = super._validateVectorElement(item);
-
-    if (!Number.isFinite(numeric)) {
-      ValidationErrorItem.throwDataTypeValidationError(
-        util.format('VECTOR expects finite numeric elements, but received %O', numeric),
-      );
-    }
-
-    return numeric;
-  }
-}
-
-function getVectorLength(value: BaseTypes.Vector): number {
-  if (Array.isArray(value)) {
-    return value.length;
-  }
-
-  if (
-    value instanceof Int8Array ||
-    value instanceof Uint8Array ||
-    value instanceof Uint8ClampedArray ||
-    value instanceof Int16Array ||
-    value instanceof Uint16Array ||
-    value instanceof Int32Array ||
-    value instanceof Uint32Array ||
-    value instanceof Float32Array ||
-    value instanceof Float64Array ||
-    value instanceof BigInt64Array ||
-    value instanceof BigUint64Array
-  ) {
-    return value.length;
-  }
-
-  throw new TypeError('Unsupported vector container type');
 }
 
 export class HSTORE extends BaseTypes.HSTORE {
