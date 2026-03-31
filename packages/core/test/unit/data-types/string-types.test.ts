@@ -263,7 +263,7 @@ See https://sequelize.org/docs/v7/models/data-types/ for a list of supported dat
       default: new Error(`${dialectName} does not support the VECTOR data type.
 See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
       oracle: 'VECTOR(3, FLOAT32)',
-      snowflake: 'VECTOR(FLOAT, 3)',
+      snowflake: new Error('Snowflake VECTOR format "float32" is not supported. Use "FLOAT" or "INT".'),
       postgres: 'VECTOR(3)',
     });
   });

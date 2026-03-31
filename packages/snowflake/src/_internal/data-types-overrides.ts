@@ -98,11 +98,6 @@ export class BIGINT extends BaseTypes.BIGINT {
   }
 }
 
-// Snowflake accepts VECTOR elements either as FLOAT or INT; normalize the various
-// aliases so downstream render & validation logic only has to branch on two cases.
-const SNOWFLAKE_FLOAT_FORMATS = new Set(['float', 'float32', 'float64', 'double']);
-const SNOWFLAKE_INT_FORMATS = new Set(['int', 'int8', 'int16', 'int32', 'int64', 'integer']);
-
 export class VECTOR extends BaseTypes.VECTOR {
   readonly #elementType: 'FLOAT' | 'INT';
 
@@ -153,16 +148,16 @@ export class VECTOR extends BaseTypes.VECTOR {
     }
 
     const lower = format.toLowerCase();
-    if (SNOWFLAKE_FLOAT_FORMATS.has(lower)) {
+    if (lower === 'float') {
       return 'float';
     }
 
-    if (SNOWFLAKE_INT_FORMATS.has(lower)) {
+    if (lower === 'int') {
       return 'int';
     }
 
     throw new TypeError(
-      `Snowflake VECTOR format "${format}" is not supported. Use "float" (default) or "int".`,
+      `Snowflake VECTOR format "${format}" is not supported. Use "FLOAT" or "INT".`,
     );
   }
 

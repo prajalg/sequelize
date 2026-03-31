@@ -38,7 +38,15 @@ export class SnowflakeQueryGeneratorInternal<
 
   formatFn(piece: Fn, options?: EscapeOptions): string {
     const fnName = piece.fn.toUpperCase();
-    if (!SNOWFLAKE_VECTOR_FUNCTION_MAP.has(fnName)) {
+    const mappedName =
+      SNOWFLAKE_VECTOR_FUNCTION_MAP.get(fnName) ??
+      (SNOWFLAKE_NATIVE_VECTOR_FUNCTIONS.has(fnName) ? fnName : undefined);
+
+    if (!mappedName) {
+      if (SNOWFLAKE_UNSUPPORTED_VECTOR_FUNCTIONS.has(fnName)) {
+        throw new Error(`${fnName} is not implemented for the Snowflake vector sample`);
+      }
+
       return super.formatFn(piece, options);
     }
 
@@ -53,9 +61,7 @@ export class SnowflakeQueryGeneratorInternal<
         : this.queryGenerator.escape(columnArg, options);
     const vectorSql = this.#formatVectorArg(vectorArg, fnName);
 
-    const render = SNOWFLAKE_VECTOR_FUNCTION_MAP.get(fnName)!;
-
-    return render(columnSql, vectorSql);
+    return `${mappedName}(${columnSql}, ${vectorSql})`;
   }
 
   #formatVectorArg(arg: unknown, fnName: string): string {
@@ -95,15 +101,14 @@ export class SnowflakeQueryGeneratorInternal<
   #looksLikeVectorLiteral(literal: string): boolean {
     return (
       literal.toUpperCase().includes('::VECTOR') ||
-      literal.startsWith('ARRAY_CONSTRUCT') ||
+      literal.startsWith('[') ||
       literal.startsWith('(') ||
-      literal.startsWith('1 - VECTOR_COSINE_SIMILARITY') ||
       literal.startsWith('VECTOR_')
     );
   }
 
-  // Snowflake needs both an ARRAY_CONSTRUCT expression and an explicit VECTOR(...) cast,
-  // which we synthesize here to spare API users from having to remember that syntax.
+  // Snowflake documents vector literals as ARRAY values cast with ::VECTOR(type, dimension),
+  // e.g. [1,2,3]::VECTOR(FLOAT, 3).
   #formatVectorFromArray(values: unknown[], elementType: 'FLOAT' | 'INT'): string {
     if (values.length === 0) {
       throw new Error('Vector arguments must contain at least one element');
@@ -117,7 +122,7 @@ export class SnowflakeQueryGeneratorInternal<
       return value;
     });
 
-    return `ARRAY_CONSTRUCT(${numericValues.join(',')})::VECTOR(${elementType}, ${numericValues.length})`;
+    return `[${numericValues.join(',')}]::VECTOR(${elementType}, ${numericValues.length})`;
   }
 
   #formatTypedArrayVector(values: NumericTypedArray): string {
@@ -127,15 +132,22 @@ export class SnowflakeQueryGeneratorInternal<
   }
 }
 
-// Sample cross-dialect implementation: Snowflake can translate the generic Sequelize helper names
-// to its own vector functions without changing the shared API surface.
-const SNOWFLAKE_VECTOR_FUNCTION_MAP = new Map<string, (column: string, vector: string) => string>([
-  ['COSINE_DISTANCE', (column, vector) => `1 - VECTOR_COSINE_SIMILARITY(${column}, ${vector})`],
-  ['INNER_PRODUCT', (column, vector) => `VECTOR_INNER_PRODUCT(${column}, ${vector})`],
-  ['L1_DISTANCE', (column, vector) => `VECTOR_L1_DISTANCE(${column}, ${vector})`],
-  ['L2_DISTANCE', (column, vector) => `VECTOR_L2_DISTANCE(${column}, ${vector})`],
-  ['VECTOR_DISTANCE', (column, vector) => `VECTOR_L2_DISTANCE(${column}, ${vector})`],
+// Sample cross-dialect implementation: keep only helper mappings that correspond directly to
+// documented Snowflake vector functions.
+const SNOWFLAKE_VECTOR_FUNCTION_MAP = new Map<string, string>([
+  ['INNER_PRODUCT', 'VECTOR_INNER_PRODUCT'],
+  ['L1_DISTANCE', 'VECTOR_L1_DISTANCE'],
+  ['L2_DISTANCE', 'VECTOR_L2_DISTANCE'],
 ]);
+
+const SNOWFLAKE_NATIVE_VECTOR_FUNCTIONS = new Set([
+  'VECTOR_INNER_PRODUCT',
+  'VECTOR_L1_DISTANCE',
+  'VECTOR_L2_DISTANCE',
+  'VECTOR_COSINE_SIMILARITY',
+]);
+
+const SNOWFLAKE_UNSUPPORTED_VECTOR_FUNCTIONS = new Set(['COSINE_DISTANCE', 'VECTOR_DISTANCE']);
 
 function isNumericTypedArray(value: ArrayBufferView): value is NumericTypedArray {
   return (
