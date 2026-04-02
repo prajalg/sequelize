@@ -11,8 +11,8 @@ if (getTestDialect() === 'postgres') {
       try {
         await sequelize.query('CREATE EXTENSION IF NOT EXISTS vector');
         await sequelize.dialect.connectionManager.refreshDynamicOids();
-      } catch {
-        this.skip();
+      } catch (error) {
+        console.log(error);
       }
 
       const extension = await sequelize.query(
