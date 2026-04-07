@@ -746,7 +746,6 @@ export class OracleQuery extends AbstractQuery {
         return type;
       }
     }
-
   }
 
   handleInsertQuery(results, metaData) {
