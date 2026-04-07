@@ -31,6 +31,7 @@ import { nameIndex } from '@sequelize/core/_non-semver-use-at-your-own-risk_/uti
 import { OracleQueryGeneratorTypeScript } from './query-generator-typescript.internal';
 
 const CREATE_TABLE_QUERY_SUPPORTED_OPTIONS = new Set(['uniqueKeys']);
+const VECTOR_ORGANIZATION_DEFAULT = 'hnsw';
 
 /**
  * list of reserved words in Oracle DB 21c
@@ -412,111 +413,104 @@ export class OracleQueryGenerator extends OracleQueryGeneratorTypeScript {
     }
 
     const requestedIndexType = toUpperCaseIfString(options?.type);
-    const requestedAttributeType = !Array.isArray(attributes)
-      ? toUpperCaseIfString(attributes?.type)
-      : undefined;
+    const requestedAttributeType = Array.isArray(attributes)
+      ? undefined
+      : toUpperCaseIfString(attributes?.type);
 
-    const vectorRequested = requestedIndexType === 'VECTOR' || requestedAttributeType === 'VECTOR';
-    if (!vectorRequested) {
+    if (requestedIndexType !== 'VECTOR' && requestedAttributeType !== 'VECTOR') {
       return super.addIndexQuery(tableName, attributes, options, rawTablename);
     }
 
-    options ||= {};
+    const normalizedOptions = this.#buildVectorIndexOptions(
+      tableName,
+      attributes,
+      options,
+      rawTablename,
+      requestedIndexType,
+    );
 
-    if (!Array.isArray(attributes)) {
-      options = attributes;
-      attributes = undefined;
-    } else {
-      options.fields = attributes;
-    }
+    return joinSQLFragments([
+      'CREATE VECTOR INDEX',
+      this.quoteIdentifiers(normalizedOptions.name),
+      `ON ${this.quoteTable(tableName)}`,
+      `(${normalizedOptions.fieldsSql.join(', ')})`,
+      'ORGANIZATION',
+      normalizedOptions.usingIsHnsw ? 'INMEMORY NEIGHBOR GRAPH' : 'NEIGHBOR PARTITION GRAPH',
+      normalizedOptions.distance,
+      normalizedOptions.accuracy,
+      normalizedOptions.parameters,
+    ]);
+  }
+
+  /**
+   * Normalizes options and SQL fragments needed to build an Oracle VECTOR index.
+   *
+   * @param {string|object} tableName
+   * @param {Array|object|undefined} attributes
+   * @param {object|undefined} options
+   * @param {string|undefined} rawTablename
+   * @param {string|undefined} requestedIndexType
+   */
+  #buildVectorIndexOptions(tableName, attributes, options, rawTablename, requestedIndexType) {
+    const normalizedOptions = Array.isArray(attributes)
+      ? { ...options, fields: attributes }
+      : { ...attributes };
 
     if (requestedIndexType) {
-      options.type = requestedIndexType;
+      normalizedOptions.type = requestedIndexType;
     }
 
-    options.prefix = options.prefix || rawTablename || tableName;
-    if (options.prefix && typeof options.prefix === 'string') {
-      options.prefix = options.prefix.replaceAll('.', '_');
-      options.prefix = options.prefix.replaceAll(/("|')/g, '');
-    }
+    normalizedOptions.prefix = sanitizePrefix(
+      normalizedOptions.prefix ?? rawTablename ?? tableName,
+    );
 
-    if (!options.fields || options.fields.length === 0) {
+    const fields = normalizedOptions.fields ?? [];
+    if (fields.length === 0) {
       throw new Error('Vector indexes require at least one indexed field.');
     }
 
-    const fieldsSql = options.fields.map(field => {
+    const fieldsSql = fields.map(field => {
       if (field instanceof BaseSqlExpression) {
         return this.formatSqlExpression(field);
       }
 
-      if (typeof field === 'string') {
-        field = { name: field };
+      const normalizedField = typeof field === 'string' ? { name: field } : { ...field };
+
+      if (normalizedField.attribute) {
+        normalizedField.name = normalizedField.attribute;
       }
 
-      if (field.attribute) {
-        field.name = field.attribute;
-      }
-
-      if (!field.name) {
+      if (!normalizedField.name) {
         throw new Error(`The following index field has no name: ${util.inspect(field)}`);
       }
 
-      let result = this.quoteIdentifier(field.name);
-      if (field.order) {
-        result += ` ${field.order}`;
-      }
-
-      return result;
+      return normalizedField.order
+        ? `${this.quoteIdentifier(normalizedField.name)} ${normalizedField.order}`
+        : this.quoteIdentifier(normalizedField.name);
     });
 
-    if (!options.name) {
-      options = nameIndex(options, options.prefix);
+    if (!normalizedOptions.name) {
+      normalizedOptions.name = nameIndex(normalizedOptions, normalizedOptions.prefix).name;
     }
 
-    options = conformIndex(options);
-    const escapedTableName = this.quoteTable(tableName);
-
-    const using = toLowerCaseIfString(options.using) ?? 'hnsw';
+    const finalizedOptions = conformIndex(normalizedOptions);
+    const using = toLowerCaseIfString(finalizedOptions.using) ?? VECTOR_ORGANIZATION_DEFAULT;
     const usingIsHnsw = using === 'hnsw';
+    const parameterFragments = buildVectorParameters(finalizedOptions.parameter, usingIsHnsw);
 
-    const parameters = [];
-    if (options.parameter) {
-      if (usingIsHnsw) {
-        parameters.push('type hnsw');
-        if (options.parameter.neighbor) {
-          parameters.push(`neighbor ${options.parameter.neighbor}`);
-        }
-
-        if (options.parameter.efconstruction) {
-          parameters.push(`efconstruction ${options.parameter.efconstruction}`);
-        }
-      } else {
-        parameters.push('type ivf');
-        if (options.parameter.partitions) {
-          parameters.push(`NEIGHBOR PARTITION ${options.parameter.partitions}`);
-        }
-
-        if (options.parameter.samplesPerPartition) {
-          parameters.push(`SAMPLES_PER_PARTITION ${options.parameter.samplesPerPartition}`);
-        }
-
-        if (options.parameter.minVectors) {
-          parameters.push(`MIN_VECTORS_PER_PARTITION ${options.parameter.minVectors}`);
-        }
-      }
-    }
-
-    return joinSQLFragments([
-      'CREATE VECTOR INDEX',
-      this.quoteIdentifiers(options.name),
-      `ON ${escapedTableName}`,
-      `(${fieldsSql.join(', ')})`,
-      'ORGANIZATION',
-      usingIsHnsw ? 'INMEMORY NEIGHBOR GRAPH' : 'NEIGHBOR PARTITION GRAPH',
-      options.distance ? `WITH DISTANCE ${options.distance}` : undefined,
-      options.accuracy ? `WITH TARGET ACCURACY ${options.accuracy}` : undefined,
-      parameters.length > 0 ? `PARAMETERS (${parameters.join(', ')})` : undefined,
-    ]);
+    return {
+      name: finalizedOptions.name,
+      fieldsSql,
+      usingIsHnsw,
+      distance: finalizedOptions.distance
+        ? `WITH DISTANCE ${finalizedOptions.distance}`
+        : undefined,
+      accuracy: finalizedOptions.accuracy
+        ? `WITH TARGET ACCURACY ${finalizedOptions.accuracy}`
+        : undefined,
+      parameters:
+        parameterFragments.length > 0 ? `PARAMETERS (${parameterFragments.join(', ')})` : undefined,
+    };
   }
 
   // addConstraintQuery(tableName, options) {
@@ -1279,6 +1273,49 @@ function toUpperCaseIfString(value) {
 
 function toLowerCaseIfString(value) {
   return typeof value === 'string' ? value.toLowerCase() : undefined;
+}
+
+function sanitizePrefix(prefix) {
+  if (typeof prefix !== 'string') {
+    return prefix;
+  }
+
+  return prefix.replaceAll('.', '_').replaceAll(/("|')/g, '');
+}
+
+function buildVectorParameters(parameter, usingIsHnsw) {
+  const parameters = [];
+  if (!parameter) {
+    return parameters;
+  }
+
+  if (usingIsHnsw) {
+    parameters.push('type hnsw');
+    if (parameter.neighbor) {
+      parameters.push(`neighbor ${parameter.neighbor}`);
+    }
+
+    if (parameter.efconstruction) {
+      parameters.push(`efconstruction ${parameter.efconstruction}`);
+    }
+
+    return parameters;
+  }
+
+  parameters.push('type ivf');
+  if (parameter.partitions) {
+    parameters.push(`NEIGHBOR PARTITION ${parameter.partitions}`);
+  }
+
+  if (parameter.samplesPerPartition) {
+    parameters.push(`SAMPLES_PER_PARTITION ${parameter.samplesPerPartition}`);
+  }
+
+  if (parameter.minVectors) {
+    parameters.push(`MIN_VECTORS_PER_PARTITION ${parameter.minVectors}`);
+  }
+
+  return parameters;
 }
 
 /* istanbul ignore next */
