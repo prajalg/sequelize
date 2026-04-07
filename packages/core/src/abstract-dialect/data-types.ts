@@ -2849,19 +2849,6 @@ export interface VectorOptions {
   format?: string;
 }
 
-type TypedArrayView =
-  | Int8Array
-  | Uint8Array
-  | Uint8ClampedArray
-  | Int16Array
-  | Uint16Array
-  | Int32Array
-  | Uint32Array
-  | Float32Array
-  | Float64Array
-  | BigInt64Array
-  | BigUint64Array;
-
 // Dialects may accept plain arrays or any numeric typed array. The generic validator
 // inspects ArrayBufferView instances without having to enumerate every concrete type here.
 export type Vector = number[] | ArrayBufferView;
@@ -2880,6 +2867,8 @@ export type Vector = number[] | ArrayBufferView;
  * DataTypes.VECTOR
  * DataTypes.VECTOR(1536)
  * DataTypes.VECTOR(1536, 'float32')
+ * DataTypes.VECTOR({ dimension: 1024, format: 'int' })
+ * DataTypes.VECTOR({ dimension: 2048 })
  * ```
  *
  * @category DataTypes
@@ -2925,6 +2914,7 @@ export class VECTOR extends AbstractDataType<Vector> {
 
   validate(value: unknown): asserts value is Vector {
     const iterable = this._getVectorIterable(value);
+
     if (iterable) {
       for (const item of iterable) {
         this._validateVectorElement(item);
@@ -2940,11 +2930,7 @@ export class VECTOR extends AbstractDataType<Vector> {
 
   // Dialects override this hook if they need to coerce custom container types into an iterable sequence.
   protected _getVectorIterable(value: unknown): Iterable<unknown> | null {
-    if (Array.isArray(value)) {
-      return value;
-    }
-
-    if (isTypedArrayView(value)) {
+    if (Array.isArray(value) || isTypedArrayIterable(value)) {
       return value;
     }
 
@@ -2971,44 +2957,21 @@ export class VECTOR extends AbstractDataType<Vector> {
 
   // Dialects can override this hook to customize VECTOR SQL rendering without replacing toSql().
   protected _getSqlOptionParts(): string[] {
-    const parts: string[] = [];
-
-    if (this.options.dimension !== undefined) {
-      parts.push(String(this.options.dimension));
-    }
-
-    if (this.options.format !== undefined) {
-      parts.push(this.options.format.toUpperCase());
-    }
-
-    return parts;
+    return [
+      ...(this.options.dimension !== undefined ? [String(this.options.dimension)] : []),
+      ...(this.options.format !== undefined ? [this.options.format.toUpperCase()] : []),
+    ];
   }
 
   toSql(): string {
-    const optionParts = this._getSqlOptionParts();
+    const parts = this._getSqlOptionParts();
 
-    if (optionParts.length === 0) {
-      return 'VECTOR';
-    }
-
-    return `VECTOR(${optionParts.join(', ')})`;
+    return parts.length ? `VECTOR(${parts.join(', ')})` : 'VECTOR';
   }
 }
 
-function isTypedArrayView(value: unknown): value is TypedArrayView {
-  return (
-    value instanceof Int8Array ||
-    value instanceof Uint8Array ||
-    value instanceof Uint8ClampedArray ||
-    value instanceof Int16Array ||
-    value instanceof Uint16Array ||
-    value instanceof Int32Array ||
-    value instanceof Uint32Array ||
-    value instanceof Float32Array ||
-    value instanceof Float64Array ||
-    value instanceof BigInt64Array ||
-    value instanceof BigUint64Array
-  );
+function isTypedArrayIterable(value: unknown): value is ArrayBufferView & Iterable<unknown> {
+  return ArrayBuffer.isView(value) && !(value instanceof DataView);
 }
 
 function rejectBlobs(value: unknown) {

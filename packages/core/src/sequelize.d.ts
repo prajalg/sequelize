@@ -613,10 +613,23 @@ export class Sequelize<
    * Get the fn for random based on the dialect
    */
   random(): Fn;
+
+  /**
+   * Build a dialect-specific vector distance function.
+   * Dialects that advertise `DialectSupportMap.dataTypes.VECTOR` translate this generic helper
+   * into their native similarity operator (Oracle, Snowflake samples, pgvector, ...).
+   *
+   * @param column column name or identifier to compare against
+   * @param value reference vector as a plain numeric array or typed array
+   */
   cosineDistance(column: string, value: number[] | Exclude<ArrayBufferView, DataView>): Fn;
+
   innerProduct(column: string, value: number[] | Exclude<ArrayBufferView, DataView>): Fn;
+
   l1Distance(column: string, value: number[] | Exclude<ArrayBufferView, DataView>): Fn;
+
   l2Distance(column: string, value: number[] | Exclude<ArrayBufferView, DataView>): Fn;
+
   vectorDistance(column: string, value: number[] | Exclude<ArrayBufferView, DataView>): Fn;
 
   /**

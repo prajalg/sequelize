@@ -678,15 +678,12 @@ export class OracleQuery extends AbstractQuery {
       // We create the object
       if (!acc[indexRecord.INDEX_NAME]) {
         const oracleIndexType = indexRecord.INDEX_TYPE?.toUpperCase();
-        const oracleIndexImplType = indexRecord.ITYP_NAME?.toUpperCase();
         let type;
         let method;
 
         if (oracleIndexType === 'VECTOR') {
           type = 'VECTOR';
           method = this.#determineVectorMethod(indexRecord.PARAMETERS_LOWER);
-        } else if (oracleIndexType === 'DOMAIN' && oracleIndexImplType === 'CONTEXT') {
-          type = 'FULLTEXT';
         } else if (oracleIndexType === 'NORMAL' || !oracleIndexType) {
           type = undefined;
         } else {
@@ -741,18 +738,15 @@ export class OracleQuery extends AbstractQuery {
   // Parse out the declared index type so consumers can see whether the index is IVF or HNSW.
   #determineVectorMethod(parametersLower) {
     if (typeof parametersLower !== 'string') {
-      return undefined;
+      return;
     }
 
-    if (parametersLower.includes('type ivf')) {
-      return 'ivf';
+    for (const type of ['ivf', 'hnsw']) {
+      if (parametersLower.includes(`type ${type}`)) {
+        return type;
+      }
     }
 
-    if (parametersLower.includes('type hnsw')) {
-      return 'hnsw';
-    }
-
-    return undefined;
   }
 
   handleInsertQuery(results, metaData) {

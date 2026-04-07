@@ -16,15 +16,24 @@ if (getTestDialect() === 'oracle') {
       }
     });
 
+    const seedModel = async (model, rows) => {
+      await model.sync({ force: true });
+
+      for (const row of rows) {
+        await model.create(row);
+      }
+    };
+
     describe('findAll', () => {
       beforeEach(async function () {
         this.Item = sequelize.define('Item', {
           embeddings: DataTypes.VECTOR(4),
         });
 
-        await this.Item.sync({ force: true });
-        await this.Item.create({ embeddings: new Float32Array([1, 1, 1, 1]) });
-        await this.Item.create({ embeddings: new Float32Array([1, 2, 3, 3]) });
+        await seedModel(this.Item, [
+          { embeddings: new Float32Array([1, 1, 1, 1]) },
+          { embeddings: new Float32Array([1, 2, 3, 3]) },
+        ]);
       });
 
       it('fetches rows', async function () {
@@ -44,11 +53,12 @@ if (getTestDialect() === 'oracle') {
           embeddings: DataTypes.VECTOR(3),
         });
 
-        await this.Item.sync({ force: true });
-        await this.Item.create({ embeddings: new Float32Array([1, 1, 1]) });
-        await this.Item.create({ embeddings: new Float32Array([5, 5, 5]) });
-        await this.Item.create({ embeddings: new Float32Array([10, 10, 10]) });
-        await this.Item.create({ embeddings: new Float32Array([1, 2, 3]) });
+        await seedModel(this.Item, [
+          { embeddings: new Float32Array([1, 1, 1]) },
+          { embeddings: new Float32Array([5, 5, 5]) },
+          { embeddings: new Float32Array([10, 10, 10]) },
+          { embeddings: new Float32Array([1, 2, 3]) },
+        ]);
       });
 
       it('supports cosine distance filtering', async function () {
@@ -180,14 +190,12 @@ if (getTestDialect() === 'oracle') {
         await this.Item.sync({ force: true });
       });
 
-      const acceptedInputs = [
-        { name: 'number array', value: [1, 2, 3] },
-        { name: 'Float32Array', value: new Float32Array([1, 2, 3]) },
-        { name: 'Float64Array', value: new Float64Array([1, 2, 3]) },
-        { name: 'Int8Array', value: new Int8Array([1, 2, 3]) },
-      ];
-
-      for (const { name, value } of acceptedInputs) {
+      for (const [name, value] of [
+        ['number array', [1, 2, 3]],
+        ['Float32Array', new Float32Array([1, 2, 3])],
+        ['Float64Array', new Float64Array([1, 2, 3])],
+        ['Int8Array', new Int8Array([1, 2, 3])],
+      ]) {
         it(`accepts ${name} input`, async function () {
           await this.Item.create({ embeddings: value });
 
@@ -196,28 +204,27 @@ if (getTestDialect() === 'oracle') {
         });
       }
 
-      it('rejects DataView input', async function () {
-        const dataView = new DataView(new ArrayBuffer(3));
+      it('persists updates performed with a plain number array', async function () {
+        const item = await this.Item.create({ embeddings: new Float32Array([1, 2, 3]) });
 
-        await expect(this.Item.create({ embeddings: dataView })).to.be.rejectedWith(
-          Error,
-          'is not a valid vector',
-        );
+        await item.update({ embeddings: [4, 5, 6] });
+
+        await item.reload();
+        expect(Array.from(item.getDataValue('embeddings'))).to.deep.equal([4, 5, 6]);
       });
 
-      it('rejects string input', async function () {
-        await expect(this.Item.create({ embeddings: '1,2,3' })).to.be.rejectedWith(
-          Error,
-          'is not a valid vector',
-        );
-      });
-
-      it('rejects arrays with non-number values', async function () {
-        await expect(this.Item.create({ embeddings: [1, '2', 3] })).to.be.rejectedWith(
-          Error,
-          'is not a valid vector',
-        );
-      });
+      for (const [name, value] of [
+        ['DataView', new DataView(new ArrayBuffer(3))],
+        ['string', '1,2,3'],
+        ['non-number array', [1, '2', 3]],
+      ]) {
+        it(`rejects ${name} input`, async function () {
+          await expect(this.Item.create({ embeddings: value })).to.be.rejectedWith(
+            Error,
+            'is not a valid vector',
+          );
+        });
+      }
 
       it('stores Uint8Array in binary vectors with matching bit-dimension', async () => {
         const BinaryItem = sequelize.define('BinaryVectorInputItem', {

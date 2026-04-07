@@ -71,6 +71,20 @@ if (current.dialect.name === 'oracle') {
         });
       });
 
+      it('accepts object-form index definition with lowercase vector type', () => {
+        expectsql(
+          queryGenerator.addIndexQuery('Foo', {
+            fields: ['vec1'],
+            type: 'vector',
+            using: 'ivf',
+          }),
+          {
+            default:
+              'CREATE VECTOR INDEX "foo_vec1" ON "Foo" ("vec1") ORGANIZATION NEIGHBOR PARTITION GRAPH',
+          },
+        );
+      });
+
       it('ivf with parameters and target accuracy', () => {
         expectsql(
           queryGenerator.addIndexQuery('foo', ['vec1'], {
@@ -273,6 +287,16 @@ if (current.dialect.name === 'oracle') {
         },
       );
 
+      testsql(
+        sql.fn('VECTOR_DISTANCE', sql.attribute('embedding'), new Uint8Array([1, 2, 3])),
+        {
+          [Op.lt]: 2,
+        },
+        {
+          oracle: `VECTOR_DISTANCE("embedding", VECTOR('[1,2,3]')) < 2`,
+        },
+      );
+
       it('throws when second argument is not a vector input', () => {
         expect(() =>
           queryGenerator.whereItemsQuery(
@@ -289,6 +313,19 @@ if (current.dialect.name === 'oracle') {
             sql.where(sql.fn('VECTOR_DISTANCE', sql.attribute('embedding'), `VECTR('[1,2,3]')`), {
               [Op.lt]: 2,
             }),
+          ),
+        ).to.throw(Error, 'Invalid value received for the "where" option');
+      });
+
+      it('throws for malformed VECTOR literal payloads', () => {
+        expect(() =>
+          queryGenerator.whereItemsQuery(
+            sql.where(
+              sql.fn('VECTOR_DISTANCE', sql.attribute('embedding'), `VECTOR('[1,foo,3]')`),
+              {
+                [Op.lt]: 2,
+              },
+            ),
           ),
         ).to.throw(Error, 'Invalid value received for the "where" option');
       });

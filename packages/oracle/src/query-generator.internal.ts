@@ -18,6 +18,9 @@ const VECTOR_FUNCTIONS = new Set([
   'VECTOR_DISTANCE',
 ]);
 
+const VECTOR_ARG_ERROR =
+  'expects the second argument to be a vector array, typed array, or VECTOR literal string';
+
 export class OracleQueryGeneratorInternal<
   Dialect extends OracleDialect = OracleDialect,
 > extends AbstractQueryGeneratorInternal<Dialect> {
@@ -88,24 +91,20 @@ export class OracleQueryGeneratorInternal<
 
     if (typeof arg === 'string') {
       const trimmed = arg.trim();
-      if (!trimmed.toUpperCase().startsWith('VECTOR(')) {
-        throw new Error(
-          `${fnName} expects the second argument to be a vector array, typed array, or VECTOR literal string`,
-        );
+      const parsed = parseVectorLiteral(trimmed);
+
+      if (parsed) {
+        return this.#formatVectorFromIterable(parsed);
       }
 
-      const vectorLiteralRegex =
-        /^VECTOR\(\s*'\[\s*(?:[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?\s*(?:,\s*[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?\s*)*)?\]'\s*\)$/i;
-      if (!vectorLiteralRegex.test(trimmed)) {
-        throw new Error(`${fnName} expects a well-formed VECTOR literal string`);
+      if (!looksLikeVectorLiteral(trimmed)) {
+        throw new Error(`${fnName} ${VECTOR_ARG_ERROR}`);
       }
 
-      return trimmed;
+      throw new Error(`${fnName} expects a well-formed VECTOR literal string`);
     }
 
-    throw new Error(
-      `${fnName} expects the second argument to be a vector array, typed array, or VECTOR literal string`,
-    );
+    throw new Error(`${fnName} ${VECTOR_ARG_ERROR}`);
   }
 
   // Oracle expects VECTOR('[1,2,3]') literals. Reuse the iterable path for both plain arrays
@@ -126,6 +125,46 @@ export class OracleQueryGeneratorInternal<
   getAliasToken(): string {
     return '';
   }
+}
+
+function looksLikeVectorLiteral(input: string): boolean {
+  const trimmed = input.trim();
+
+  return trimmed.toUpperCase().startsWith('VECTOR(') && trimmed.endsWith(')');
+}
+
+function parseVectorLiteral(input: string): number[] | null {
+  const trimmed = input.trim();
+  if (!looksLikeVectorLiteral(trimmed)) {
+    return null;
+  }
+
+  const openParenIndex = trimmed.indexOf('(');
+  const inner = trimmed.slice(openParenIndex + 1, -1).trim();
+  if (!inner.startsWith("'") || !inner.endsWith("'")) {
+    return null;
+  }
+
+  const body = inner.slice(1, -1);
+  if (!body.startsWith('[') || !body.endsWith(']')) {
+    return null;
+  }
+
+  let values: unknown;
+  try {
+    values = JSON.parse(body);
+  } catch {
+    return null;
+  }
+
+  if (
+    !Array.isArray(values) ||
+    values.some(value => typeof value !== 'number' || Number.isNaN(value))
+  ) {
+    return null;
+  }
+
+  return values;
 }
 
 function isNumericTypedArray(

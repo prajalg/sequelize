@@ -116,7 +116,7 @@ export interface IndexOptions {
   parser?: string | null;
 
   /**
-   * Index type. One of `UNIQUE`, `FULLTEXT`, `SPATIAL`, and `VECTOR` (Oracle only).
+   * Index type. Used by MySQL (`UNIQUE`, `FULLTEXT`, `SPATIAL`) and Oracle (`VECTOR`).
    */
   type?: IndexType | undefined;
 
@@ -178,13 +178,32 @@ export interface IndexOptions {
   accuracy?: number;
 
   /**
-   * Oracle vector index parameters.
+   * Implementation-specific options for Oracle VECTOR indexes.
    */
   parameter?: {
+    /**
+     * Neighbor list size (HNSW).
+     */
     neighbor?: number;
+
+    /**
+     * Graph construction effort (HNSW).
+     */
     efconstruction?: number;
+
+    /**
+     * Number of partitions (IVF).
+     */
     partitions?: number;
+
+    /**
+     * Sample count per partition (IVF).
+     */
     samplesPerPartition?: number;
+
+    /**
+     * Minimum vectors per partition (IVF).
+     */
     minVectors?: number;
   };
 

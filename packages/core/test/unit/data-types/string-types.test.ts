@@ -215,80 +215,82 @@ See https://sequelize.org/docs/v7/models/data-types/ for a list of supported dat
   });
 });
 
-describe('DataTypes.VECTOR', () => {
-  describe('constructor', () => {
-    it('stores empty options when no args are passed', () => {
-      const type = DataTypes.VECTOR();
+if (sequelize.dialect.supports?.dataTypes?.VECTOR) {
+  describe('DataTypes.VECTOR', () => {
+    describe('constructor', () => {
+      it('stores empty options when no args are passed', () => {
+        const type = DataTypes.VECTOR();
 
-      expect(type.options).to.deep.equal({});
+        expect(type.options).to.deep.equal({});
+      });
+
+      it('stores dimension when only dimension is passed', () => {
+        const type = DataTypes.VECTOR(4);
+
+        expect(type.options).to.deep.equal({ dimension: 4 });
+      });
+
+      it('stores dimension and format when both args are passed', () => {
+        const type = DataTypes.VECTOR(3, 'float32');
+
+        expect(type.options).to.deep.equal({ dimension: 3, format: 'float32' });
+      });
+
+      it('supports object-style options', () => {
+        const type = DataTypes.VECTOR({ dimension: 8, format: 'float64' });
+
+        expect(type.options).to.deep.equal({ dimension: 8, format: 'float64' });
+      });
     });
 
-    it('stores dimension when only dimension is passed', () => {
-      const type = DataTypes.VECTOR(4);
+    describe('toSql', () => {
+      testDataTypeSql('VECTOR', DataTypes.VECTOR, {
+        default: new Error(`${dialectName} does not support the VECTOR data type.
+  See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
+        oracle: 'VECTOR',
+        postgres: 'VECTOR',
+        snowflake: new Error('Snowflake VECTOR requires a positive integer "dimension" option.'),
+      });
 
-      expect(type.options).to.deep.equal({ dimension: 4 });
+      testDataTypeSql('VECTOR(4)', DataTypes.VECTOR(4), {
+        default: new Error(`${dialectName} does not support the VECTOR data type.
+  See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
+        oracle: 'VECTOR(4, *)',
+        postgres: 'VECTOR(4)',
+        snowflake: 'VECTOR(FLOAT, 4)',
+      });
+
+      testDataTypeSql("VECTOR(3, 'float32')", DataTypes.VECTOR(3, 'float32'), {
+        default: new Error(`${dialectName} does not support the VECTOR data type.
+  See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
+        oracle: 'VECTOR(3, FLOAT32)',
+        postgres: 'VECTOR(3)',
+        snowflake: new Error(
+          'Snowflake VECTOR format "float32" is not supported. Use "FLOAT" or "INT".',
+        ),
+      });
     });
 
-    it('stores dimension and format when both args are passed', () => {
-      const type = DataTypes.VECTOR(3, 'float32');
+    describe('validate', () => {
+      it('should throw an error if value is invalid', () => {
+        const type: DataTypeInstance = DataTypes.VECTOR();
 
-      expect(type.options).to.deep.equal({ dimension: 3, format: 'float32' });
-    });
+        expect(() => {
+          type.validate('vector');
+        }).to.throw(ValidationErrorItem, "'vector' is not a valid vector");
+      });
 
-    it('supports object-style options', () => {
-      const type = DataTypes.VECTOR({ dimension: 8, format: 'float64' });
+      it('should not throw if value is an array', () => {
+        const type: DataTypeInstance = DataTypes.VECTOR();
 
-      expect(type.options).to.deep.equal({ dimension: 8, format: 'float64' });
+        expect(() => type.validate([1, 2, 3])).not.to.throw();
+      });
+
+      it('should not throw if value is a typed array', () => {
+        const type: DataTypeInstance = DataTypes.VECTOR();
+
+        expect(() => type.validate(new Float32Array([1, 2, 3]))).not.to.throw();
+      });
     });
   });
-
-  describe('toSql', () => {
-    testDataTypeSql('VECTOR', DataTypes.VECTOR, {
-      default: new Error(`${dialectName} does not support the VECTOR data type.
-See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
-      oracle: 'VECTOR',
-      postgres: 'VECTOR',
-      snowflake: new Error('Snowflake VECTOR requires a positive integer "dimension" option.'),
-    });
-
-    testDataTypeSql('VECTOR(4)', DataTypes.VECTOR(4), {
-      default: new Error(`${dialectName} does not support the VECTOR data type.
-See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
-      oracle: 'VECTOR(4, *)',
-      postgres: 'VECTOR(4)',
-      snowflake: 'VECTOR(FLOAT, 4)',
-    });
-
-    testDataTypeSql("VECTOR(3, 'float32')", DataTypes.VECTOR(3, 'float32'), {
-      default: new Error(`${dialectName} does not support the VECTOR data type.
-See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
-      oracle: 'VECTOR(3, FLOAT32)',
-      postgres: 'VECTOR(3)',
-      snowflake: new Error(
-        'Snowflake VECTOR format "float32" is not supported. Use "FLOAT" or "INT".',
-      ),
-    });
-  });
-
-  describe('validate', () => {
-    it('should throw an error if value is invalid', () => {
-      const type: DataTypeInstance = DataTypes.VECTOR();
-
-      expect(() => {
-        type.validate('vector');
-      }).to.throw(ValidationErrorItem, "'vector' is not a valid vector");
-    });
-
-    it('should not throw if value is an array', () => {
-      const type: DataTypeInstance = DataTypes.VECTOR();
-
-      expect(() => type.validate([1, 2, 3])).not.to.throw();
-    });
-
-    it('should not throw if value is a typed array', () => {
-      const type: DataTypeInstance = DataTypes.VECTOR();
-
-      expect(() => type.validate(new Float32Array([1, 2, 3]))).not.to.throw();
-    });
-  });
-});
+}
