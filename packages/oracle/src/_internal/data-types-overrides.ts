@@ -373,18 +373,18 @@ export class JSON extends BaseTypes.JSON {
   }
 
   toBindableValue(value: any): string {
-    if (value === null) {
-      const sequelize = this._getDialect().sequelize;
-
-      const isExplicit = sequelize.options.nullJsonStringification === 'explicit';
-      if (isExplicit) {
-        throw new Error(
-          `Attempted to insert the JavaScript null into a JSON column, but the "nullJsonStringification" option is set to "explicit", so Sequelize cannot decide whether to use the SQL NULL or the JSON 'null'. Use the SQL_NULL or JSON_NULL variable instead, or set the option to a different value. See https://sequelize.org/docs/v7/querying/json/ for details.`,
-        );
-      }
+    if (value !== null) {
+      return typeof value === 'string' ? value : globalThis.JSON.stringify(value);
     }
 
-    return typeof value === 'string' ? value : globalThis.JSON.stringify(value);
+    const sequelize = this._getDialect().sequelize;
+    if (sequelize.options.nullJsonStringification === 'explicit') {
+      throw new Error(
+        `Attempted to insert the JavaScript null into a JSON column, but the "nullJsonStringification" option is set to "explicit", so Sequelize cannot decide whether to use the SQL NULL or the JSON 'null'. Use the SQL_NULL or JSON_NULL variable instead, or set the option to a different value. See https://sequelize.org/docs/v7/querying/json/ for details.`,
+      );
+    }
+
+    return globalThis.JSON.stringify(value);
   }
 
   getBindParamSql(value: any, options: BindParamOptions): any {
