@@ -129,9 +129,57 @@ if (current.dialect.name === 'postgres') {
         });
       });
 
+      it('accepts JSON array strings by normalizing to pgvector literals', () => {
+        const where = sql.where(current.l2Distance('embedding', '[1,2,3]'), {
+          [Op.lt]: 2,
+        });
+
+        expectsql(queryGenerator.whereItemsQuery(where), {
+          postgres: `("embedding" <-> '[1,2,3]'::vector) < 2`,
+        });
+      });
+
       it('throws for malformed vector literal strings', () => {
         expect(() =>
           queryGenerator.formatSqlExpression(current.l2Distance('embedding', 'not-a-vector')),
+        ).to.throw(
+          Error,
+          'L2_DISTANCE expects the second argument to be a number array, typed array, or pgvector literal string',
+        );
+      });
+
+      it('throws when vector function has too few arguments', () => {
+        expect(() =>
+          queryGenerator.formatSqlExpression(sql.fn('L2_DISTANCE', sql.attribute('embedding'))),
+        ).to.throw(Error, 'L2_DISTANCE expects exactly 2 arguments');
+      });
+
+      it('throws when vector function has too many arguments', () => {
+        expect(() =>
+          queryGenerator.formatSqlExpression(
+            sql.fn('L2_DISTANCE', sql.attribute('embedding'), [1, 2, 3], [4, 5, 6]),
+          ),
+        ).to.throw(Error, 'L2_DISTANCE expects exactly 2 arguments');
+      });
+
+      it('throws for empty vector arrays', () => {
+        expect(() => queryGenerator.formatSqlExpression(current.l2Distance('embedding', []))).to.throw(
+          Error,
+          'Vector arguments must contain at least one element',
+        );
+      });
+
+      it('throws for invalid vector array elements', () => {
+        expect(() =>
+          queryGenerator.formatSqlExpression(current.l2Distance('embedding', [1, '2', 3])),
+        ).to.throw(Error, 'is not a valid vector element');
+      });
+
+      it('rejects DataView inputs as vector arguments', () => {
+        expect(() =>
+          queryGenerator.formatSqlExpression(
+            current.l2Distance('embedding', new DataView(new ArrayBuffer(8))),
+          ),
         ).to.throw(
           Error,
           'L2_DISTANCE expects the second argument to be a number array, typed array, or pgvector literal string',

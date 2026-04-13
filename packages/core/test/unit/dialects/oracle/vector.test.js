@@ -100,6 +100,19 @@ if (current.dialect.name === 'oracle') {
         );
       });
 
+      it('supports explicit vector distance metric', () => {
+        expectsql(
+          queryGenerator.addIndexQuery('foo', ['vec1'], {
+            type: 'VECTOR',
+            distance: 'COSINE',
+          }),
+          {
+            default:
+              'CREATE VECTOR INDEX "foo_vec1" ON "foo" ("vec1") ORGANIZATION INMEMORY NEIGHBOR GRAPH WITH DISTANCE COSINE',
+          },
+        );
+      });
+
       it('treats non-hnsw using as ivf organization', () => {
         expectsql(
           queryGenerator.addIndexQuery('foo', ['vec1'], {
@@ -167,11 +180,61 @@ if (current.dialect.name === 'oracle') {
         );
       });
 
+      it('supports hnsw parameters in SQL', () => {
+        expectsql(
+          queryGenerator.addIndexQuery('foo', ['vec1'], {
+            type: 'VECTOR',
+            using: 'hnsw',
+            parameter: { neighbor: 8, efconstruction: 32 },
+          }),
+          {
+            default:
+              'CREATE VECTOR INDEX "foo_vec1" ON "foo" ("vec1") ORGANIZATION INMEMORY NEIGHBOR GRAPH PARAMETERS (type hnsw, neighbor 8, efconstruction 32)',
+          },
+        );
+      });
+
+      it('supports ordered index fields', () => {
+        expectsql(
+          queryGenerator.addIndexQuery('foo', {
+            fields: [{ name: 'vec1', order: 'DESC' }],
+            type: 'VECTOR',
+          }),
+          {
+            default:
+              'CREATE VECTOR INDEX "foo_vec1" ON "foo" ("vec1" DESC) ORGANIZATION INMEMORY NEIGHBOR GRAPH',
+          },
+        );
+      });
+
+      it('supports SQL expression index fields', () => {
+        expectsql(
+          queryGenerator.addIndexQuery('foo', {
+            name: 'foo_vec_expr',
+            fields: [sql.literal('LOWER("vec1")')],
+            type: 'VECTOR',
+          }),
+          {
+            default:
+              'CREATE VECTOR INDEX "foo_vec_expr" ON "foo" (LOWER("vec1")) ORGANIZATION INMEMORY NEIGHBOR GRAPH',
+          },
+        );
+      });
+
       it('throws when no fields are provided', () => {
         expect(() => queryGenerator.addIndexQuery('foo', [], { type: 'VECTOR' })).to.throw(
           Error,
           'Vector indexes require at least one indexed field.',
         );
+      });
+
+      it('throws when a vector index field has no name', () => {
+        expect(() =>
+          queryGenerator.addIndexQuery('foo', {
+            fields: [{}],
+            type: 'VECTOR',
+          }),
+        ).to.throw(Error, 'The following index field has no name');
       });
     });
 
@@ -236,6 +299,71 @@ if (current.dialect.name === 'oracle') {
 
         const result = query.handleShowIndexesQuery(rows);
         expect(result[0].method).to.equal(undefined);
+      });
+
+      it('maps NORMAL index type to undefined', () => {
+        const query = buildQuery();
+        const rows = [
+          {
+            INDEX_NAME: 'IDX_NORMAL',
+            INDEX_TYPE: 'NORMAL',
+            ITYP_NAME: null,
+            UNIQUENESS: 'NONUNIQUE',
+            CONSTRAINT_TYPE: null,
+            TABLE_NAME: 'FOO',
+            COLUMN_NAME: 'ID',
+            DESCEND: null,
+            PARAMETERS_LOWER: null,
+          },
+        ];
+
+        const result = query.handleShowIndexesQuery(rows);
+        expect(result[0].type).to.equal(undefined);
+      });
+
+      it('keeps non-vector index types', () => {
+        const query = buildQuery();
+        const rows = [
+          {
+            INDEX_NAME: 'IDX_BITMAP',
+            INDEX_TYPE: 'BITMAP',
+            ITYP_NAME: null,
+            UNIQUENESS: 'NONUNIQUE',
+            CONSTRAINT_TYPE: null,
+            TABLE_NAME: 'FOO',
+            COLUMN_NAME: 'ID',
+            DESCEND: null,
+            PARAMETERS_LOWER: null,
+          },
+        ];
+
+        const result = query.handleShowIndexesQuery(rows);
+        expect(result[0].type).to.equal('BITMAP');
+      });
+    });
+
+    describe('VECTOR datatype override hooks', () => {
+      it('converts array input to Float64Array bind values', () => {
+        const type = DataTypes.VECTOR(3).toDialectDataType(current.dialect);
+        const bindValue = type.toBindableValue([1, 2, 3]);
+
+        expect(bindValue).to.be.instanceOf(Float64Array);
+        expect(Array.from(bindValue)).to.deep.equal([1, 2, 3]);
+      });
+
+      it('keeps typed array input as-is for binding', () => {
+        const type = DataTypes.VECTOR(3).toDialectDataType(current.dialect);
+        const typed = new Float32Array([1, 2, 3]);
+
+        expect(type.toBindableValue(typed)).to.equal(typed);
+      });
+
+      it('returns the Oracle VECTOR bind definition', () => {
+        const type = DataTypes.VECTOR(3).toDialectDataType(current.dialect);
+
+        expect(type._getBindDef({ DB_TYPE_VECTOR: 'DB_TYPE_VECTOR' })).to.deep.equal({
+          type: 'DB_TYPE_VECTOR',
+        });
       });
     });
 
