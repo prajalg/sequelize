@@ -87,10 +87,9 @@ if (current.dialect.name === 'snowflake') {
     });
 
     it('throws for empty vector arrays', () => {
-      expect(() => queryGenerator.formatSqlExpression(current.l2Distance('embedding', []))).to.throw(
-        Error,
-        'Vector arguments must contain at least one element',
-      );
+      expect(() =>
+        queryGenerator.formatSqlExpression(current.l2Distance('embedding', [])),
+      ).to.throw(Error, 'Vector arguments must contain at least one element');
     });
 
     it('throws for invalid vector array elements', () => {

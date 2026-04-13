@@ -410,11 +410,7 @@ if (dialect.startsWith('oracle')) {
           needsSequelize: true,
         },
         {
-          arguments: [
-            'myTable',
-            { embedding: [1, 2, 3] },
-            { embedding: { type: vectorDialect } },
-          ],
+          arguments: ['myTable', { embedding: [1, 2, 3] }, { embedding: { type: vectorDialect } }],
           expectation: {
             query: 'INSERT INTO "myTable" ("embedding") VALUES ($sequelize_1);',
             bind: { sequelize_1: Float64Array.from([1, 2, 3]) },
