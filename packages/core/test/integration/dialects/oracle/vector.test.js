@@ -1,6 +1,6 @@
 'use strict';
 
-const { DataTypes, Op, sql } = require('@sequelize/core');
+const { DataTypes, Op, QueryTypes, sql } = require('@sequelize/core');
 const { expect } = require('chai');
 const semver = require('semver');
 const { getTestDialect, sequelize } = require('../../../support');
@@ -136,6 +136,21 @@ if (getTestDialect() === 'oracle') {
         }
       });
 
+      it('supports raw SQL bind parameters for VECTOR_DISTANCE query vectors', async () => {
+        const rows = await sequelize.query(
+          `SELECT "id" FROM "Items" WHERE VECTOR_DISTANCE("embeddings", $queryVector) < $threshold ORDER BY "id"`,
+          {
+            bind: {
+              queryVector: Float32Array.from([1, 2, 3]),
+              threshold: 0.05,
+            },
+            type: QueryTypes.SELECT,
+          },
+        );
+
+        expect(rows).to.have.length(1);
+      });
+
       it('accepts valid VECTOR literal strings in vector functions', async function () {
         const result = await this.Item.findAll({
           where: sql.where(
@@ -153,6 +168,18 @@ if (getTestDialect() === 'oracle') {
           this.Item.findAll({
             where: sql.where(
               sql.fn('VECTOR_DISTANCE', sql.attribute('embeddings'), `VECTR('[1,2,3]')`),
+              Op.lt,
+              2,
+            ),
+          }),
+        ).to.be.rejected;
+      });
+
+      it('rejects unsupported integer typed arrays as the query vector argument', async function () {
+        await expect(
+          this.Item.findAll({
+            where: sql.where(
+              sql.fn('VECTOR_DISTANCE', sql.attribute('embeddings'), new Int8Array([1, 2, 3])),
               Op.lt,
               2,
             ),

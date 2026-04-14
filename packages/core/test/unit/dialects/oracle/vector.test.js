@@ -425,6 +425,16 @@ if (current.dialect.name === 'oracle') {
         },
       );
 
+      it('throws when second argument is an unsupported integer typed array', () => {
+        expect(() =>
+          queryGenerator.whereItemsQuery(
+            sql.where(sql.fn('VECTOR_DISTANCE', sql.attribute('embedding'), new Int8Array([1])), {
+              [Op.lt]: 2,
+            }),
+          ),
+        ).to.throw(Error, 'Invalid value received for the "where" option');
+      });
+
       it('throws when second argument is not a vector input', () => {
         expect(() =>
           queryGenerator.whereItemsQuery(
