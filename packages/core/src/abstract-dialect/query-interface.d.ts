@@ -179,6 +179,10 @@ export interface IndexOptions {
 
   /**
    * Implementation-specific options for Oracle VECTOR indexes.
+   *
+   * Acronyms:
+   * - HNSW: Hierarchical Navigable Small World
+   * - IVF: Inverted File Flat
    */
   parameter?: {
     /**

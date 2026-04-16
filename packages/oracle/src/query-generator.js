@@ -27,8 +27,8 @@ import {
   getObjectFromMap,
 } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/object.js';
 import { defaultValueSchemable } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/query-builder-utils.js';
-import { pojo } from '@sequelize/utils';
 import { nameIndex } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/string.js';
+import { pojo } from '@sequelize/utils';
 import { OracleQueryGeneratorTypeScript } from './query-generator-typescript.internal';
 
 const CREATE_TABLE_QUERY_SUPPORTED_OPTIONS = new Set(['uniqueKeys']);
