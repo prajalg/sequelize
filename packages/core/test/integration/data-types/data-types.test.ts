@@ -1827,7 +1827,7 @@ describe('DataTypes', () => {
       // TODO [2024-06-18]: Re-enable this test when we drop support for MariaDB < 10.5
       //
       // Oracle JSON is a BLOB column and it returns Buffer for raw SQL.
-      // Oracle JSONB is mapped to a native JSON column.
+      // Oracle JSONB is mapped to a native Oracle Database JSON column introduced in Oracle Database 21c (Oracle's OSON format).
       if (dialect.name !== 'mariadb' && dialect.name !== 'oracle') {
         if (dialect.name === 'mssql' || dialect.name === 'sqlite3') {
           // MSSQL: does not have a JSON type, so we can't parse it if our DataType is not specified.
