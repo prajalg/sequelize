@@ -17,6 +17,10 @@ import { PostgresQueryGenerator } from '../query-generator';
 import { stringifyHstore } from './hstore.js';
 import { buildRangeParser, stringifyRange } from './range.js';
 
+export interface PgVectorOptions {
+  dimension: number;
+}
+
 function removeUnsupportedIntegerOptions(
   dataType: BaseTypes.BaseIntegerDataType,
   dialect: AbstractDialect,
@@ -295,20 +299,13 @@ export class GEOGRAPHY extends BaseTypes.GEOGRAPHY {
 
 export class VECTOR extends BaseTypes.VECTOR {
   protected _getSqlOptionParts(): string[] {
-    return this.options.dimension != null ? [String(this.options.dimension)] : [];
+    const options = this.#getPgOptions();
+
+    return options ? [String(options.dimension)] : [];
   }
 
   protected _checkOptionSupport(dialect: AbstractDialect): void {
     super._checkOptionSupport(dialect);
-
-    if (
-      this.options.dimension != null &&
-      (!Number.isInteger(this.options.dimension) || this.options.dimension <= 0)
-    ) {
-      throw new TypeError(
-        `${dialect.name} VECTOR requires the "dimension" option to be a positive integer.`,
-      );
-    }
 
     if (this.options.format) {
       dialect.warnDataTypeIssue(
@@ -320,8 +317,9 @@ export class VECTOR extends BaseTypes.VECTOR {
 
   validate(value: unknown): asserts value is BaseTypes.Vector {
     super.validate(value);
+    const options = this.#getPgOptions();
 
-    if (this.options.dimension == null) {
+    if (options == null) {
       return;
     }
 
@@ -331,11 +329,11 @@ export class VECTOR extends BaseTypes.VECTOR {
     }
 
     const values = [...iterable];
-    if (values.length !== this.options.dimension) {
+    if (values.length !== options.dimension) {
       ValidationErrorItem.throwDataTypeValidationError(
         util.format(
           'VECTOR expects values of length %d, but received %d',
-          this.options.dimension,
+          options.dimension,
           values.length,
         ),
       );
@@ -387,6 +385,16 @@ export class VECTOR extends BaseTypes.VECTOR {
     throw new Error(
       `DataTypes.VECTOR received a non-vector value from the database: ${inspect(value)}`,
     );
+  }
+
+  #getPgOptions(): PgVectorOptions | null {
+    if (this.options.dimension == null) {
+      return null;
+    }
+
+    return {
+      dimension: this._validateDimension(this.options.dimension, 16_000),
+    };
   }
 }
 

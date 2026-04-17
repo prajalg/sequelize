@@ -2884,44 +2884,8 @@ export type Vector = number[] | ArrayBufferView;
  *
  * @category DataTypes
  */
-export class VECTOR extends AbstractDataType<Vector> {
-  /** @hidden */
-  static readonly [DataTypeIdentifier]: string = 'VECTOR';
-
-  readonly options: VectorOptions;
-
-  constructor();
-  constructor(dimension: number, format?: string);
-  constructor(options: VectorOptions);
-  // we have to define the constructor overloads using tuples due to a TypeScript limitation
-  //  https://github.com/microsoft/TypeScript/issues/29732, to play nice with classToInvokable.
-  /** @hidden */
-  constructor(
-    ...args:
-      | []
-      | [dimension: number]
-      | [dimension: number, format: string]
-      | [options: VectorOptions]
-  );
-  constructor(dimensionOrOptions?: number | VectorOptions, format?: string) {
-    super();
-
-    if (typeof dimensionOrOptions === 'object') {
-      this.options = {
-        ...(dimensionOrOptions.dimension !== undefined
-          ? { dimension: dimensionOrOptions.dimension }
-          : {}),
-        ...(dimensionOrOptions.format !== undefined ? { format: dimensionOrOptions.format } : {}),
-      };
-
-      return;
-    }
-
-    this.options = {
-      ...(dimensionOrOptions !== undefined ? { dimension: dimensionOrOptions } : {}),
-      ...(format !== undefined ? { format } : {}),
-    };
-  }
+export abstract class AbstractVECTORBase<TOptions extends object> extends AbstractDataType<Vector> {
+  readonly options!: TOptions;
 
   validate(value: unknown): asserts value is Vector {
     const iterable = this._getVectorIterable(value);
@@ -2939,7 +2903,6 @@ export class VECTOR extends AbstractDataType<Vector> {
     );
   }
 
-  // Dialects override this hook if they need to coerce custom container types into an iterable sequence.
   protected _getVectorIterable(value: unknown): Iterable<unknown> | null {
     if (Array.isArray(value) || isTypedArrayIterable(value)) {
       return value;
@@ -2948,10 +2911,8 @@ export class VECTOR extends AbstractDataType<Vector> {
     return null;
   }
 
-  // Returns the validated numeric value so dialect overrides can add additional checks
-  // (integer-only, finite only, etc.) while still reusing the base logic.
   protected _validateVectorElement(item: unknown): number {
-    if (typeof item !== 'number' || Number.isNaN(item)) {
+    if (typeof item !== 'number' || !Number.isFinite(item)) {
       ValidationErrorItem.throwDataTypeValidationError(
         util.format('%O is not a valid vector', item),
       );
@@ -2960,24 +2921,103 @@ export class VECTOR extends AbstractDataType<Vector> {
     return item;
   }
 
+  protected _validateDimension(dimension: number, max?: number): number {
+    if (!Number.isInteger(dimension) || dimension <= 0) {
+      throw new TypeError(`Invalid VECTOR dimension: ${dimension}`);
+    }
+
+    if (max !== undefined && dimension > max) {
+      throw new TypeError(`Invalid VECTOR dimension: ${dimension} (max ${max})`);
+    }
+
+    return dimension;
+  }
+
   protected _checkOptionSupport(dialect: AbstractDialect) {
     if (!dialect.supports.dataTypes.VECTOR) {
       throwUnsupportedDataType(dialect, 'VECTOR');
     }
   }
 
-  // Dialects can override this hook to customize VECTOR SQL rendering without replacing toSql().
+  protected abstract _getTypeName(): string;
+
   protected _getSqlOptionParts(): string[] {
-    return [
-      ...(this.options.dimension !== undefined ? [String(this.options.dimension)] : []),
-      ...(this.options.format !== undefined ? [this.options.format.toUpperCase()] : []),
-    ];
+    return [];
   }
 
   toSql(): string {
     const parts = this._getSqlOptionParts();
 
-    return parts.length ? `VECTOR(${parts.join(', ')})` : 'VECTOR';
+    return parts.length ? `${this._getTypeName()}(${parts.join(', ')})` : this._getTypeName();
+  }
+}
+
+export class VECTOR extends AbstractVECTORBase<VectorOptions> {
+  /** @hidden */
+  static readonly [DataTypeIdentifier]: string = 'VECTOR';
+
+  readonly options: VectorOptions;
+
+  constructor();
+  constructor(dimension: number, format?: string);
+  constructor(options: VectorOptions);
+  /** @hidden */
+  constructor(
+    ...args:
+      | []
+      | [dimension: number]
+      | [dimension: number, format: string]
+      | [options: VectorOptions]
+  );
+  constructor(dimensionOrOptions?: number | VectorOptions, format?: string) {
+    super();
+
+    if (typeof dimensionOrOptions === 'object' && dimensionOrOptions !== null) {
+      this.options = {
+        ...(dimensionOrOptions.dimension !== undefined
+          ? { dimension: this._validateDimension(dimensionOrOptions.dimension) }
+          : {}),
+        ...(dimensionOrOptions.format !== undefined
+          ? { format: this._validateFormat(dimensionOrOptions.format) }
+          : {}),
+      };
+
+      return;
+    }
+
+    this.options = {
+      ...(dimensionOrOptions !== undefined
+        ? { dimension: this._validateDimension(dimensionOrOptions) }
+        : {}),
+      ...(format !== undefined ? { format: this._validateFormat(format) } : {}),
+    };
+  }
+
+  protected _getTypeName(): string {
+    return 'VECTOR';
+  }
+
+  protected _validateFormat(format: string): string {
+    const normalized = format.trim().toLowerCase();
+
+    switch (normalized) {
+      case 'float32':
+      case 'float64':
+      case 'int8':
+      case 'int16':
+      case 'int32':
+      case 'binary':
+        return normalized;
+      default:
+        throw new TypeError(`Invalid VECTOR format: ${format}`);
+    }
+  }
+
+  protected override _getSqlOptionParts(): string[] {
+    return [
+      ...(this.options.dimension !== undefined ? [String(this.options.dimension)] : []),
+      ...(this.options.format !== undefined ? [this.options.format.toUpperCase()] : []),
+    ];
   }
 }
 

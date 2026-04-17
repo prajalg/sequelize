@@ -175,6 +175,18 @@ if (getTestDialect() === 'oracle') {
         ).to.be.rejected;
       });
 
+      it('rejects non-finite vector elements in vector functions', async function () {
+        await expect(
+          this.Item.findAll({
+            where: sql.where(
+              sql.fn('VECTOR_DISTANCE', sql.attribute('embeddings'), [1, Infinity, 3]),
+              Op.lt,
+              2,
+            ),
+          }),
+        ).to.be.rejected;
+      });
+
       it('rejects unsupported integer typed arrays as the query vector argument', async function () {
         await expect(
           this.Item.findAll({
@@ -256,6 +268,30 @@ if (getTestDialect() === 'oracle') {
       it('stores Uint8Array in binary vectors with matching bit-dimension', async () => {
         const BinaryItem = sequelize.define('BinaryVectorInputItem', {
           embeddings: DataTypes.VECTOR(24, 'binary'),
+        });
+
+        await BinaryItem.sync({ force: true });
+        await BinaryItem.create({ embeddings: new Uint8Array([1, 2, 3]) });
+
+        const row = await BinaryItem.findOne();
+        expect(row).to.not.equal(null);
+      });
+
+      it('accepts object-style binary format options', async () => {
+        const BinaryItem = sequelize.define('BinaryVectorInputItemObjectStyle', {
+          embeddings: DataTypes.VECTOR({ dimension: 24, format: 'binary' }),
+        });
+
+        await BinaryItem.sync({ force: true });
+        await BinaryItem.create({ embeddings: new Uint8Array([1, 2, 3]) });
+
+        const row = await BinaryItem.findOne();
+        expect(row).to.not.equal(null);
+      });
+
+      it('accepts uppercase binary format in constructor arguments', async () => {
+        const BinaryItem = sequelize.define('BinaryVectorInputItemUppercase', {
+          embeddings: DataTypes.VECTOR(24, 'BINARY'),
         });
 
         await BinaryItem.sync({ force: true });

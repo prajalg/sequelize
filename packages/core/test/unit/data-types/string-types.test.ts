@@ -241,6 +241,47 @@ if (sequelize.dialect.supports?.dataTypes?.VECTOR) {
 
         expect(type.options).to.deep.equal({ dimension: 8, format: 'float64' });
       });
+
+      it('supports object-style options with only dimension', () => {
+        const type = DataTypes.VECTOR({ dimension: 8 });
+
+        expect(type.options).to.deep.equal({ dimension: 8 });
+      });
+
+      it('normalizes binary format casing in constructor options', () => {
+        const type = DataTypes.VECTOR(24, 'BINARY');
+
+        expect(type.options).to.deep.equal({ dimension: 24, format: 'binary' });
+      });
+
+      it('rejects invalid dimensions', () => {
+        expect(() => DataTypes.VECTOR(0)).to.throw(TypeError, 'Invalid VECTOR dimension');
+      });
+
+      it('rejects invalid object-style dimensions', () => {
+        expect(() => DataTypes.VECTOR({ dimension: 0 })).to.throw(
+          TypeError,
+          'Invalid VECTOR dimension',
+        );
+        expect(() => DataTypes.VECTOR({ dimension: 1.5 })).to.throw(
+          TypeError,
+          'Invalid VECTOR dimension',
+        );
+      });
+
+      it('rejects unknown formats', () => {
+        expect(() => DataTypes.VECTOR(3, 'float32) DROP TABLE x; --')).to.throw(
+          TypeError,
+          'Invalid VECTOR format',
+        );
+      });
+
+      it('rejects unknown object-style formats', () => {
+        expect(() => DataTypes.VECTOR({ dimension: 3, format: 'drop table x' })).to.throw(
+          TypeError,
+          'Invalid VECTOR format',
+        );
+      });
     });
 
     describe('toSql', () => {
@@ -255,7 +296,7 @@ if (sequelize.dialect.supports?.dataTypes?.VECTOR) {
       testDataTypeSql('VECTOR(4)', DataTypes.VECTOR(4), {
         default: new Error(`${dialectName} does not support the VECTOR data type.
   See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
-        oracle: 'VECTOR(4, *)',
+        oracle: 'VECTOR(4)',
         postgres: 'VECTOR(4)',
         snowflake: 'VECTOR(FLOAT, 4)',
       });
@@ -265,9 +306,15 @@ if (sequelize.dialect.supports?.dataTypes?.VECTOR) {
   See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
         oracle: 'VECTOR(3, FLOAT32)',
         postgres: 'VECTOR(3)',
-        snowflake: new Error(
-          'Snowflake VECTOR format "float32" is not supported. Use "FLOAT" or "INT".',
-        ),
+        snowflake: new Error('Invalid Snowflake VECTOR format: float32'),
+      });
+
+      testDataTypeSql("VECTOR(24, 'binary')", DataTypes.VECTOR(24, 'binary'), {
+        default: new Error(`${dialectName} does not support the VECTOR data type.
+  See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
+        oracle: 'VECTOR(24, BINARY)',
+        postgres: 'VECTOR(24)',
+        snowflake: new Error('Invalid Snowflake VECTOR format: binary'),
       });
     });
 
@@ -290,6 +337,15 @@ if (sequelize.dialect.supports?.dataTypes?.VECTOR) {
         const type: DataTypeInstance = DataTypes.VECTOR();
 
         expect(() => type.validate(new Float32Array([1, 2, 3]))).not.to.throw();
+      });
+
+      it('should throw if value contains non-finite numbers', () => {
+        const type: DataTypeInstance = DataTypes.VECTOR();
+
+        expect(() => type.validate([1, Infinity, 3])).to.throw(
+          ValidationErrorItem,
+          'is not a valid vector',
+        );
       });
     });
   });

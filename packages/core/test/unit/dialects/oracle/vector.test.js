@@ -365,6 +365,33 @@ if (current.dialect.name === 'oracle') {
           type: 'DB_TYPE_VECTOR',
         });
       });
+
+      it('rejects unsupported Oracle VECTOR formats', () => {
+        expect(() => DataTypes.VECTOR(3, 'int16').toDialectDataType(current.dialect)).to.throw(
+          TypeError,
+          'Invalid Oracle VECTOR format: int16',
+        );
+      });
+
+      it('accepts Oracle binary format and renders BINARY in SQL', () => {
+        const type = DataTypes.VECTOR(24, 'binary').toDialectDataType(current.dialect);
+
+        expect(type.toSql()).to.equal('VECTOR(24, BINARY)');
+      });
+
+      it('renders object-style binary options in SQL', () => {
+        const type = DataTypes.VECTOR({ dimension: 24, format: 'binary' }).toDialectDataType(
+          current.dialect,
+        );
+
+        expect(type.toSql()).to.equal('VECTOR(24, BINARY)');
+      });
+
+      it('keeps object-style dimension-only SQL concise', () => {
+        const type = DataTypes.VECTOR({ dimension: 24 }).toDialectDataType(current.dialect);
+
+        expect(type.toSql()).to.equal('VECTOR(24)');
+      });
     });
 
     describe('Vector where clause', () => {
@@ -439,6 +466,16 @@ if (current.dialect.name === 'oracle') {
         expect(() =>
           queryGenerator.whereItemsQuery(
             sql.where(sql.fn('VECTOR_DISTANCE', sql.attribute('embedding'), 'not-a-vector'), {
+              [Op.lt]: 2,
+            }),
+          ),
+        ).to.throw(Error, 'Invalid value received for the "where" option');
+      });
+
+      it('throws for non-finite vector array elements', () => {
+        expect(() =>
+          queryGenerator.whereItemsQuery(
+            sql.where(sql.fn('VECTOR_DISTANCE', sql.attribute('embedding'), [1, Infinity, 3]), {
               [Op.lt]: 2,
             }),
           ),

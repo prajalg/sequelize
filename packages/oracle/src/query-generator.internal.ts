@@ -112,7 +112,7 @@ export class OracleQueryGeneratorInternal<
   #formatVectorFromIterable(values: Iterable<number>): string {
     const parts: number[] = [];
     for (const item of values) {
-      if (typeof item !== 'number' || Number.isNaN(item)) {
+      if (typeof item !== 'number' || !Number.isFinite(item)) {
         throw new Error(`${util.format('%O is not a valid vector element', item)}`);
       }
 
@@ -159,7 +159,7 @@ function parseVectorLiteral(input: string): number[] | null {
 
   if (
     !Array.isArray(values) ||
-    values.some(value => typeof value !== 'number' || Number.isNaN(value))
+    values.some(value => typeof value !== 'number' || !Number.isFinite(value))
   ) {
     return null;
   }

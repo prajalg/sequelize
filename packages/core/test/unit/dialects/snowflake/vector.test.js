@@ -2,13 +2,27 @@
 
 const { expect } = require('chai');
 const Support = require('../../../support');
-const { Op, sql } = require('@sequelize/core');
+const { DataTypes, Op, sql } = require('@sequelize/core');
 
 const expectsql = Support.expectsql;
 const current = Support.sequelize;
 const queryGenerator = current.dialect.queryGenerator;
 
 if (current.dialect.name === 'snowflake') {
+  describe('[Snowflake Specific] VECTOR datatype', () => {
+    it('renders SQL with default FLOAT element type', () => {
+      const type = DataTypes.VECTOR(3).toDialectDataType(current.dialect);
+
+      expect(type.toSql()).to.equal('VECTOR(FLOAT, 3)');
+    });
+
+    it('rejects dimensions above Snowflake max size', () => {
+      const type = DataTypes.VECTOR(4097).toDialectDataType(current.dialect);
+
+      expect(() => type.toSql()).to.throw(TypeError, 'Invalid VECTOR dimension: 4097 (max 4096)');
+    });
+  });
+
   describe('[Snowflake Specific] VECTOR functions', () => {
     it('renders L2 distance from array input', () => {
       const where = sql.where(current.l2Distance('embedding', [1, 2, 3]), {
@@ -95,6 +109,12 @@ if (current.dialect.name === 'snowflake') {
     it('throws for invalid vector array elements', () => {
       expect(() =>
         queryGenerator.formatSqlExpression(current.l2Distance('embedding', [1, '2', 3])),
+      ).to.throw(Error, 'is not a valid vector element');
+    });
+
+    it('throws for non-finite vector array elements', () => {
+      expect(() =>
+        queryGenerator.formatSqlExpression(current.l2Distance('embedding', [1, Infinity, 3])),
       ).to.throw(Error, 'is not a valid vector element');
     });
 

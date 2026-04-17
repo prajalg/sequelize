@@ -45,9 +45,15 @@ if (current.dialect.name === 'postgres') {
       it('rejects non-finite values', () => {
         const type = DataTypes.VECTOR(3).toDialectDataType(current.dialect);
 
-        expect(() => type.validate([1, Infinity, 3])).to.throw(
-          Error,
-          'VECTOR expects finite numeric elements',
+        expect(() => type.validate([1, Infinity, 3])).to.throw(Error, 'is not a valid vector');
+      });
+
+      it('rejects dimensions above pgvector max size', () => {
+        const type = DataTypes.VECTOR(16_001).toDialectDataType(current.dialect);
+
+        expect(() => type.toSql()).to.throw(
+          TypeError,
+          'Invalid VECTOR dimension: 16001 (max 16000)',
         );
       });
 

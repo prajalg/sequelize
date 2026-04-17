@@ -115,7 +115,7 @@ export class SnowflakeQueryGeneratorInternal<
     }
 
     const numericValues = values.map(value => {
-      if (typeof value !== 'number' || Number.isNaN(value)) {
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
         throw new Error(util.format('%O is not a valid vector element', value));
       }
 

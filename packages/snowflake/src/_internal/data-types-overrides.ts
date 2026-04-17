@@ -5,6 +5,13 @@ import * as BaseTypes from '@sequelize/core/_non-semver-use-at-your-own-risk_/ab
 import maxBy from 'lodash/maxBy.js';
 import util from 'node:util';
 
+export type SnowflakeVectorFormat = 'INT' | 'FLOAT';
+
+export interface SnowflakeVectorOptions {
+  dimension: number;
+  format: SnowflakeVectorFormat;
+}
+
 export class DATE extends BaseTypes.DATE {
   toSql() {
     return `TIMESTAMP${this.options.precision != null ? `(${this.options.precision})` : ''}`;
@@ -99,66 +106,38 @@ export class BIGINT extends BaseTypes.BIGINT {
 }
 
 export class VECTOR extends BaseTypes.VECTOR {
-  readonly #elementType: 'FLOAT' | 'INT';
-
-  constructor(...args: ConstructorParameters<typeof BaseTypes.VECTOR>) {
-    super(...args);
-
-    const normalizedFormat = this.#normalizeFormat(this.options.format);
-    this.#elementType = normalizedFormat === 'int' ? 'INT' : 'FLOAT';
-    this.options.format = normalizedFormat;
-
-    // Snowflake requires the dimension to be provided up front; surface a clearer
-    // error here rather than letting the server reject the DDL later.
-    if (this.options.dimension == null || !Number.isInteger(this.options.dimension)) {
-      throw new TypeError('Snowflake VECTOR requires a positive integer "dimension" option.');
-    }
-
-    if (this.options.dimension <= 0) {
-      throw new TypeError(
-        'Snowflake VECTOR requires the "dimension" option to be greater than zero.',
-      );
-    }
-  }
-
   protected _getSqlOptionParts(): string[] {
-    // Sample cross-dialect implementation: Snowflake needs VECTOR(type, dimension),
-    // so it overrides the shared SQL option hook instead of replacing toSql().
-    return [this.#elementType, String(this.options.dimension)];
+    const options = this.#getSnowflakeOptions();
+
+    return [options.format, String(options.dimension)];
   }
 
   validate(value: unknown): asserts value is BaseTypes.Vector {
     super.validate(value);
+    const options = this.#getSnowflakeOptions();
 
     const length = this.#getVectorLength(value);
-    if (length !== this.options.dimension) {
+    if (length !== options.dimension) {
       ValidationErrorItem.throwDataTypeValidationError(
         util.format(
           'VECTOR expects values of length %d, but received %d',
-          this.options.dimension,
+          options.dimension,
           length,
         ),
       );
     }
   }
 
-  #normalizeFormat(format: string | undefined): 'float' | 'int' {
-    if (format == null) {
-      return 'float';
-    }
+  protected _validateFormat(format: string): SnowflakeVectorFormat {
+    const normalized = format.trim().toUpperCase();
 
-    const lower = format.toLowerCase();
-    if (lower === 'float') {
-      return 'float';
+    switch (normalized) {
+      case 'INT':
+      case 'FLOAT':
+        return normalized;
+      default:
+        throw new TypeError(`Invalid Snowflake VECTOR format: ${format}`);
     }
-
-    if (lower === 'int') {
-      return 'int';
-    }
-
-    throw new TypeError(
-      `Snowflake VECTOR format "${format}" is not supported. Use "FLOAT" or "INT".`,
-    );
   }
 
   #getVectorLength(value: BaseTypes.Vector): number {
@@ -187,17 +166,29 @@ export class VECTOR extends BaseTypes.VECTOR {
 
   protected _validateVectorElement(item: unknown): number {
     const numeric = super._validateVectorElement(item);
+    const options = this.#getSnowflakeOptions();
 
-    if (this.options.format === 'int' && !Number.isInteger(numeric)) {
+    if (options.format === 'INT' && !Number.isInteger(numeric)) {
       ValidationErrorItem.throwDataTypeValidationError(
         util.format(
           'VECTOR(INT, %d) only accepts integers, but received %O',
-          this.options.dimension,
+          options.dimension,
           numeric,
         ),
       );
     }
 
     return numeric;
+  }
+
+  #getSnowflakeOptions(): SnowflakeVectorOptions {
+    if (this.options.dimension == null) {
+      throw new TypeError('Snowflake VECTOR requires a positive integer "dimension" option.');
+    }
+
+    const dimension = this._validateDimension(this.options.dimension, 4096);
+    const format = this._validateFormat(this.options.format ?? 'FLOAT');
+
+    return { dimension, format };
   }
 }

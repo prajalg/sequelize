@@ -183,6 +183,12 @@ export class DATE extends BaseTypes.DATE {
 }
 
 type AcceptedNumber = number | bigint | boolean | string | null;
+export type OracleVectorFormat = 'INT8' | 'FLOAT32' | 'FLOAT64' | 'BINARY' | '*';
+
+export interface OracleVectorOptions {
+  dimension?: number | '*';
+  format?: OracleVectorFormat;
+}
 
 export class DECIMAL extends BaseTypes.DECIMAL {
   toSql() {
@@ -421,12 +427,38 @@ export class DATEONLY extends BaseTypes.DATEONLY {
 }
 
 export class VECTOR extends BaseTypes.VECTOR {
-  protected _getSqlOptionParts(): string[] {
-    if (this.options.dimension == null) {
-      return [];
+  protected _validateFormat(format: string): OracleVectorFormat {
+    const normalized = format.trim().toUpperCase();
+
+    switch (normalized) {
+      case 'INT8':
+      case 'FLOAT32':
+      case 'FLOAT64':
+      case 'BINARY':
+      case '*':
+        return normalized;
+      default:
+        throw new TypeError(`Invalid Oracle VECTOR format: ${format}`);
+    }
+  }
+
+  protected _validateOracleDimension(dimension: number | '*'): number | '*' {
+    if (dimension === '*') {
+      return dimension;
     }
 
-    return [String(this.options.dimension), this.options.format?.toUpperCase() ?? '*'];
+    return this._validateDimension(dimension);
+  }
+
+  protected _getSqlOptionParts(): string[] {
+    const options = this.options as OracleVectorOptions;
+
+    return [
+      ...(options.dimension !== undefined
+        ? [String(this._validateOracleDimension(options.dimension))]
+        : []),
+      ...(options.format !== undefined ? [this._validateFormat(options.format)] : []),
+    ];
   }
 
   toBindableValue(value: BaseTypes.Vector) {
