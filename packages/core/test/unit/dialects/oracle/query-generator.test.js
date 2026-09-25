@@ -316,6 +316,7 @@ if (dialect.startsWith('oracle')) {
           },
           needsSequelize: true,
         },
+
         // Variants when quoteIdentifiers is false
         {
           arguments: ['myTable', { name: 'foo' }],
