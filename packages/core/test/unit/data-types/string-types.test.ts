@@ -217,68 +217,69 @@ See https://sequelize.org/docs/v7/models/data-types/ for a list of supported dat
 
 describe('DataTypes.VECTOR', () => {
   describe('constructor', () => {
-    it('stores empty options when no args are passed', () => {
+    it('defaults to float32 and plain-array reads', () => {
       const type = DataTypes.VECTOR();
 
-      expect(type.options).to.deep.equal({});
+      expect(type.options).to.deep.equal({ elementType: 'float32', typedArray: false });
     });
 
-    it('stores dimension when only dimension is passed', () => {
+    it('supports positional dimensions', () => {
       const type = DataTypes.VECTOR(4);
 
-      expect(type.options).to.deep.equal({ dimension: 4 });
+      expect(type.options).to.deep.equal({
+        dimensions: 4,
+        elementType: 'float32',
+        typedArray: false,
+      });
     });
 
-    it('stores dimension and format when both args are passed', () => {
-      const type = DataTypes.VECTOR(3, 'float32');
+    it('supports RFC-style options', () => {
+      const type = DataTypes.VECTOR({
+        dimensions: 8,
+        elementType: 'float64',
+        typedArray: true,
+      });
 
-      expect(type.options).to.deep.equal({ dimension: 3, format: 'float32' });
-    });
-
-    it('supports object-style options', () => {
-      const type = DataTypes.VECTOR({ dimension: 8, format: 'float64' });
-
-      expect(type.options).to.deep.equal({ dimension: 8, format: 'float64' });
-    });
-
-    it('supports object-style options with only dimension', () => {
-      const type = DataTypes.VECTOR({ dimension: 8 });
-
-      expect(type.options).to.deep.equal({ dimension: 8 });
-    });
-
-    it('normalizes binary format casing in constructor options', () => {
-      const type = DataTypes.VECTOR(24, 'BINARY');
-
-      expect(type.options).to.deep.equal({ dimension: 24, format: 'binary' });
+      expect(type.options).to.deep.equal({
+        dimensions: 8,
+        elementType: 'float64',
+        typedArray: true,
+      });
     });
 
     it('rejects invalid dimensions', () => {
-      expect(() => DataTypes.VECTOR(0)).to.throw(TypeError, 'Invalid VECTOR dimension');
-    });
-
-    it('rejects invalid object-style dimensions', () => {
-      expect(() => DataTypes.VECTOR({ dimension: 0 })).to.throw(
+      expect(() => DataTypes.VECTOR(0)).to.throw(TypeError, 'Invalid VECTOR dimensions');
+      expect(() => DataTypes.VECTOR({ dimensions: 1.5 })).to.throw(
         TypeError,
-        'Invalid VECTOR dimension',
-      );
-      expect(() => DataTypes.VECTOR({ dimension: 1.5 })).to.throw(
-        TypeError,
-        'Invalid VECTOR dimension',
+        'Invalid VECTOR dimensions',
       );
     });
 
-    it('rejects unknown formats', () => {
-      expect(() => DataTypes.VECTOR(3, 'float32) DROP TABLE x; --')).to.throw(
+    it('rejects unsupported element types', () => {
+      expect(() => DataTypes.VECTOR({ dimensions: 3, elementType: 'int32' as 'float32' })).to.throw(
         TypeError,
-        'Invalid VECTOR format',
+        'Invalid VECTOR element type',
       );
     });
 
-    it('rejects unknown object-style formats', () => {
-      expect(() => DataTypes.VECTOR({ dimension: 3, format: 'drop table x' })).to.throw(
+    it('rejects unknown options instead of silently dropping them', () => {
+      expect(() => DataTypes.VECTOR({ dimensions: 3, storage: 'sparse' } as never)).to.throw(
         TypeError,
-        'Invalid VECTOR format',
+        'Unknown VECTOR option(s): storage',
+      );
+    });
+
+    it('requires a boolean typedArray option', () => {
+      expect(() => DataTypes.VECTOR({ typedArray: 'yes' } as never)).to.throw(
+        TypeError,
+        'VECTOR typedArray must be a boolean',
+      );
+    });
+
+    it('requires binary dimensions to be a multiple of 8', () => {
+      expect(() => DataTypes.VECTOR({ dimensions: 9, elementType: 'binary' })).to.throw(
+        TypeError,
+        'VECTOR dimensions must be a multiple of 8',
       );
     });
   });
@@ -287,25 +288,50 @@ describe('DataTypes.VECTOR', () => {
     testDataTypeSql('VECTOR', DataTypes.VECTOR, {
       default: new Error(`${dialectName} does not support the VECTOR data type.
 See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
-      oracle: 'VECTOR',
+      oracle: 'VECTOR(*, FLOAT32)',
     });
 
     testDataTypeSql('VECTOR(4)', DataTypes.VECTOR(4), {
       default: new Error(`${dialectName} does not support the VECTOR data type.
 See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
-      oracle: 'VECTOR(4)',
+      oracle: 'VECTOR(4, FLOAT32)',
     });
 
-    testDataTypeSql("VECTOR(3, 'float32')", DataTypes.VECTOR(3, 'float32'), {
-      default: new Error(`${dialectName} does not support the VECTOR data type.
+    testDataTypeSql(
+      "VECTOR({ dimensions: 3, elementType: 'float64' })",
+      DataTypes.VECTOR({ dimensions: 3, elementType: 'float64' }),
+      {
+        default: new Error(`${dialectName} does not support the VECTOR data type.
 See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
-      oracle: 'VECTOR(3, FLOAT32)',
-    });
+        oracle: 'VECTOR(3, FLOAT64)',
+      },
+    );
 
-    testDataTypeSql("VECTOR(24, 'binary')", DataTypes.VECTOR(24, 'binary'), {
+    testDataTypeSql(
+      "VECTOR({ dimensions: 24, elementType: 'binary' })",
+      DataTypes.VECTOR({ dimensions: 24, elementType: 'binary' }),
+      {
+        default: new Error(`${dialectName} does not support the VECTOR data type.
+See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
+        oracle: 'VECTOR(24, BINARY)',
+      },
+    );
+
+    testDataTypeSql(
+      "VECTOR({ dimensions: 3, elementType: 'float16' })",
+      DataTypes.VECTOR({ dimensions: 3, elementType: 'float16' }),
+      {
+        default: new Error(`${dialectName} does not support the VECTOR data type.
+See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
+        oracle: new Error(`oracle does not support the VECTOR(float16) data type.
+See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
+      },
+    );
+
+    testDataTypeSql('VECTOR(65536)', DataTypes.VECTOR(65_536), {
       default: new Error(`${dialectName} does not support the VECTOR data type.
 See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
-      oracle: 'VECTOR(24, BINARY)',
+      oracle: new Error('oracle supports at most 65535 dimensions for VECTOR element type float32'),
     });
   });
 
@@ -318,22 +344,89 @@ See https://sequelize.org/docs/v7/models/data-types/ for a list of supported dat
       }).to.throw(ValidationErrorItem, "'vector' is not a valid vector");
     });
 
-    it('should not throw if value is an array', () => {
-      const type: DataTypeInstance = DataTypes.VECTOR();
+    it('accepts a non-empty finite number array with matching dimensions', () => {
+      const type = DataTypes.VECTOR(3);
 
       expect(() => type.validate([1, 2, 3])).not.to.throw();
     });
 
-    it('should not throw if value is a typed array', () => {
-      const type: DataTypeInstance = DataTypes.VECTOR();
+    it('rejects empty, non-finite and wrong-length values', () => {
+      const type = DataTypes.VECTOR(3);
 
-      expect(() => type.validate(new Float32Array([1, 2, 3]))).not.to.throw();
+      expect(() => type.validate([])).to.throw(ValidationErrorItem, 'must not be empty');
+      expect(() => type.validate([1, Number.NaN, 3])).to.throw(
+        ValidationErrorItem,
+        'not a valid vector element',
+      );
+      expect(() => type.validate([1, 2])).to.throw(ValidationErrorItem, 'but 3 were expected');
     });
 
-    it('should not validate vector elements in the base type', () => {
-      const type: DataTypeInstance = DataTypes.VECTOR();
+    it('requires typed arrays to match the element type', () => {
+      expect(() => DataTypes.VECTOR(3).validate(new Float32Array([1, 2, 3]))).not.to.throw();
+      expect(() =>
+        DataTypes.VECTOR({ dimensions: 3, elementType: 'float64' }).validate(
+          new Float32Array([1, 2, 3]),
+        ),
+      ).to.throw(ValidationErrorItem, 'Float32Array is not valid for VECTOR element type float64');
+    });
 
-      expect(() => type.validate([1, Infinity, 3])).not.to.throw();
+    it('validates int8 ranges', () => {
+      const type = DataTypes.VECTOR({ dimensions: 2, elementType: 'int8' });
+
+      expect(() => type.validate([-128, 127])).not.to.throw();
+      expect(() => type.validate([1, 128])).to.throw(
+        ValidationErrorItem,
+        '128 is not a valid int8 vector element',
+      );
+      expect(() => type.validate([1, 1.5])).to.throw(
+        ValidationErrorItem,
+        '1.5 is not a valid int8 vector element',
+      );
+    });
+
+    it('requires binary values to be packed Uint8Arrays', () => {
+      const type = DataTypes.VECTOR({ dimensions: 24, elementType: 'binary' });
+
+      expect(() => type.validate(new Uint8Array([1, 2, 3]))).not.to.throw();
+      expect(() => type.validate([1, 2, 3])).to.throw(
+        ValidationErrorItem,
+        'Array is not valid for VECTOR element type binary',
+      );
+    });
+  });
+
+  describe('parseDatabaseValue', () => {
+    it('returns number arrays by default', () => {
+      const result = DataTypes.VECTOR(3).parseDatabaseValue(new Float32Array([1, 2, 3]));
+
+      expect(result).to.deep.equal([1, 2, 3]);
+    });
+
+    it('returns the matching typed array when opted in', () => {
+      const result = DataTypes.VECTOR({ dimensions: 3, typedArray: true }).parseDatabaseValue([
+        1, 2, 3,
+      ]);
+
+      expect(result).to.be.instanceOf(Float32Array);
+    });
+
+    it('always returns packed binary vectors as Uint8Array', () => {
+      const value = new Uint8Array([1, 2, 3]);
+      const result = DataTypes.VECTOR({
+        dimensions: 24,
+        elementType: 'binary',
+      }).parseDatabaseValue(value);
+
+      expect(result).to.equal(value);
+    });
+  });
+
+  describe('areValuesEqual', () => {
+    it('compares vector values element-by-element across array kinds', () => {
+      const type = DataTypes.VECTOR(3);
+
+      expect(type.areValuesEqual([1, 2, 3], new Float32Array([1, 2, 3]))).to.be.true;
+      expect(type.areValuesEqual([1, 2, 3], new Float32Array([1, 2, 4]))).to.be.false;
     });
   });
 });

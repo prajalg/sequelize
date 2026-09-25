@@ -411,10 +411,7 @@ export class STRING extends AbstractDataType<string | Buffer> {
   /** @hidden */
   constructor(
     ...args:
-      | []
-      | [length: number]
-      | [length: number, binary: boolean]
-      | [options: StringTypeOptions]
+      [] | [length: number] | [length: number, binary: boolean] | [options: StringTypeOptions]
   );
 
   constructor(lengthOrOptions?: number | StringTypeOptions, binary?: boolean) {
@@ -2867,34 +2864,19 @@ export class TSVECTOR extends AbstractDataType<string> {
   }
 }
 
+export type VectorElementType = 'float16' | 'float32' | 'float64' | 'int8' | 'binary';
+
 export interface VectorOptions {
-  /**
-   * Optional vector dimension.
-   */
-  dimension?: number;
-  /**
-   * Optional dialect-specific element format (for example float32, int8, binary).
-   */
-  format?: string;
+  /** The number of elements in the vector. */
+  dimensions?: number;
+  /** The numeric format used to store each element. */
+  elementType?: VectorElementType;
+  /** Return typed arrays instead of plain arrays when reading values. */
+  typedArray?: boolean;
 }
 
-/**
- * Numeric typed arrays accepted as vector values.
- */
-export type NumericTypedArray =
-  | Int8Array
-  | Uint8Array
-  | Uint8ClampedArray
-  | Int16Array
-  | Uint16Array
-  | Int32Array
-  | Uint32Array
-  | Float32Array
-  | Float64Array;
-
-// Dialects may accept plain arrays or any number-backed typed array. The generic validator
-// checks only the container shape; dialects are responsible for validating dimensions and values.
-export type VectorValue = number[] | NumericTypedArray;
+export type VectorTypedArray = Float32Array | Float64Array | Int8Array | Uint8Array;
+export type VectorValue = number[] | VectorTypedArray;
 
 /**
  * The VECTOR type stores ordered numeric vectors.
@@ -2913,166 +2895,211 @@ export type VectorValue = number[] | NumericTypedArray;
  * ```ts
  * DataTypes.VECTOR
  * DataTypes.VECTOR(1536)
- * DataTypes.VECTOR(1536, 'float32')
- * DataTypes.VECTOR({ dimension: 1024, format: 'int8' })
- * DataTypes.VECTOR({ dimension: 2048 })
+ * DataTypes.VECTOR({ dimensions: 1024, elementType: 'int8' })
+ * DataTypes.VECTOR({ dimensions: 2048, typedArray: true })
  * ```
  *
  * @category DataTypes
  */
-export abstract class AbstractVECTORBase<
-  TOptions extends object,
-> extends AbstractDataType<VectorValue> {
-  readonly options!: TOptions;
-
-  validate(value: unknown): asserts value is VectorValue {
-    if (this._getVectorIterable(value)) {
-      return;
-    }
-
-    ValidationErrorItem.throwDataTypeValidationError(
-      util.format('%O is not a valid vector', value),
-    );
-  }
-
-  protected _getVectorIterable(value: unknown): VectorValue | null {
-    if (Array.isArray(value) || isTypedArrayIterable(value)) {
-      return value;
-    }
-
-    return null;
-  }
-
-  protected _validateVectorElement(item: unknown): number {
-    if (typeof item !== 'number' || !Number.isFinite(item)) {
-      ValidationErrorItem.throwDataTypeValidationError(
-        util.format('%O is not a valid vector', item),
-      );
-    }
-
-    return item;
-  }
-
-  protected _validateDimension(dimension: number, max?: number): number {
-    if (!Number.isInteger(dimension) || dimension <= 0) {
-      throw new TypeError(`Invalid VECTOR dimension: ${dimension}`);
-    }
-
-    if (max !== undefined && dimension > max) {
-      throw new TypeError(`Invalid VECTOR dimension: ${dimension} (max ${max})`);
-    }
-
-    return dimension;
-  }
-
-  protected _checkOptionSupport(dialect: AbstractDialect) {
-    if (!dialect.supports.dataTypes.VECTOR) {
-      throwUnsupportedDataType(dialect, 'VECTOR');
-    }
-  }
-
-  protected abstract _getTypeName(): string;
-
-  protected _getSqlOptionParts(): string[] {
-    return [];
-  }
-
-  toSql(): string {
-    const parts = this._getSqlOptionParts();
-
-    return parts.length ? `${this._getTypeName()}(${parts.join(', ')})` : this._getTypeName();
-  }
-}
-
-/**
- * Generic VECTOR implementation used by dialects whose options fit {@link VectorOptions}.
- * Dialects with stricter option models can extend {@link AbstractVECTORBase} directly.
- */
-export class VECTOR extends AbstractVECTORBase<VectorOptions> {
+export class VECTOR extends AbstractDataType<VectorValue> {
   /** @hidden */
   static readonly [DataTypeIdentifier]: string = 'VECTOR';
 
-  readonly options: VectorOptions;
+  readonly options: Readonly<Required<Pick<VectorOptions, 'elementType' | 'typedArray'>>> &
+    Pick<VectorOptions, 'dimensions'>;
 
   constructor();
-  constructor(dimension: number, format?: string);
+  constructor(dimensions: number);
   constructor(options: VectorOptions);
   /** @hidden */
-  constructor(
-    ...args:
-      | []
-      | [dimension: number]
-      | [dimension: number, format: string]
-      | [options: VectorOptions]
-  );
-  constructor(dimensionOrOptions?: number | VectorOptions, format?: string) {
+  constructor(...args: [] | [dimensions: number] | [options: VectorOptions]);
+  constructor(dimensionsOrOptions?: number | VectorOptions) {
     super();
 
-    if (typeof dimensionOrOptions === 'object' && dimensionOrOptions !== null) {
-      this.options = {
-        ...(dimensionOrOptions.dimension !== undefined
-          ? { dimension: this._validateDimension(dimensionOrOptions.dimension) }
-          : {}),
-        ...(dimensionOrOptions.format !== undefined
-          ? { format: this._validateFormat(dimensionOrOptions.format) }
-          : {}),
-      };
+    const options =
+      typeof dimensionsOrOptions === 'number'
+        ? { dimensions: dimensionsOrOptions }
+        : (dimensionsOrOptions ?? {});
+    const unknownOptions = Object.keys(options).filter(
+      option => !['dimensions', 'elementType', 'typedArray'].includes(option),
+    );
+    if (unknownOptions.length > 0) {
+      throw new TypeError(`Unknown VECTOR option(s): ${unknownOptions.join(', ')}`);
+    }
 
-      return;
+    const elementType = options.elementType ?? 'float32';
+    this.#validateElementType(elementType);
+
+    if (options.typedArray !== undefined && typeof options.typedArray !== 'boolean') {
+      throw new TypeError(
+        `VECTOR typedArray must be a boolean, received ${util.inspect(options.typedArray)}`,
+      );
+    }
+
+    const dimensions =
+      options.dimensions === undefined ? undefined : this.#validateDimensions(options.dimensions);
+    if (elementType === 'binary' && dimensions !== undefined && dimensions % 8 !== 0) {
+      throw new TypeError('VECTOR dimensions must be a multiple of 8 for binary vectors');
     }
 
     this.options = {
-      ...(dimensionOrOptions !== undefined
-        ? { dimension: this._validateDimension(dimensionOrOptions) }
-        : {}),
-      ...(format !== undefined ? { format: this._validateFormat(format) } : {}),
+      ...(dimensions === undefined ? {} : { dimensions }),
+      elementType,
+      typedArray: options.typedArray ?? false,
     };
   }
 
-  protected _getTypeName(): string {
-    return 'VECTOR';
-  }
+  validate(value: unknown): asserts value is VectorValue {
+    if (!Array.isArray(value) && !isVectorTypedArray(value)) {
+      ValidationErrorItem.throwDataTypeValidationError(
+        util.format('%O is not a valid vector', value),
+      );
+    }
 
-  protected _validateFormat(format: string): string {
-    const normalized = format.trim().toLowerCase();
+    const expectedLength =
+      this.options.dimensions === undefined
+        ? undefined
+        : this.options.elementType === 'binary'
+          ? this.options.dimensions / 8
+          : this.options.dimensions;
+    if (value.length === 0) {
+      ValidationErrorItem.throwDataTypeValidationError('VECTOR values must not be empty');
+    }
 
-    switch (normalized) {
-      case 'float':
-      case 'float32':
-      case 'float64':
-      case 'int':
-      case 'int8':
-      case 'int16':
-      case 'int32':
-      case 'binary':
-        return normalized;
-      default:
-        throw new TypeError(`Invalid VECTOR format: ${format}`);
+    if (expectedLength !== undefined && value.length !== expectedLength) {
+      ValidationErrorItem.throwDataTypeValidationError(
+        `VECTOR value has ${value.length} element(s), but ${expectedLength} were expected`,
+      );
+    }
+
+    if (!this.#isExpectedArrayType(value)) {
+      ValidationErrorItem.throwDataTypeValidationError(
+        `${value.constructor.name} is not valid for VECTOR element type ${this.options.elementType}`,
+      );
+    }
+
+    for (const element of value) {
+      if (typeof element !== 'number' || !Number.isFinite(element)) {
+        ValidationErrorItem.throwDataTypeValidationError(
+          util.format('%O is not a valid vector element', element),
+        );
+      }
+
+      if (
+        this.options.elementType === 'int8' &&
+        (!Number.isInteger(element) || element < -128 || element > 127)
+      ) {
+        ValidationErrorItem.throwDataTypeValidationError(
+          `${element} is not a valid int8 vector element`,
+        );
+      }
     }
   }
 
-  protected override _getSqlOptionParts(): string[] {
+  parseDatabaseValue(value: unknown): VectorValue {
+    this.validate(value);
+
+    if (this.options.elementType === 'binary') {
+      return value instanceof Uint8Array ? value : Uint8Array.from(value);
+    }
+
+    return this.options.typedArray ? this.#toTypedArray(value) : [...value];
+  }
+
+  areValuesEqual(value: VectorValue, originalValue: VectorValue): boolean {
+    return (
+      value.length === originalValue.length &&
+      value.every((element, index) => element === originalValue[index])
+    );
+  }
+
+  protected _checkOptionSupport(dialect: AbstractDialect) {
+    const support = dialect.supports.dataTypes.VECTOR;
+    if (!support) {
+      throwUnsupportedDataType(dialect, 'VECTOR');
+    }
+
+    const elementTypeSupport = support.elementTypes[this.options.elementType];
+    if (!elementTypeSupport) {
+      throwUnsupportedDataType(dialect, `VECTOR(${this.options.elementType})`);
+    }
+
+    if (this.options.dimensions === undefined && !support.optionalDimensions) {
+      throw new Error(`${dialect.name} requires VECTOR dimensions to be specified`);
+    }
+
+    if (
+      this.options.dimensions !== undefined &&
+      this.options.dimensions > elementTypeSupport.maxDimensions
+    ) {
+      throw new Error(
+        `${dialect.name} supports at most ${elementTypeSupport.maxDimensions} dimensions for VECTOR element type ${this.options.elementType}`,
+      );
+    }
+  }
+
+  protected _getSqlOptionParts(): string[] {
     return [
-      ...(this.options.dimension !== undefined ? [String(this.options.dimension)] : []),
-      ...(this.options.format !== undefined ? [this.options.format.toUpperCase()] : []),
+      ...(this.options.dimensions === undefined ? [] : [String(this.options.dimensions)]),
+      this.options.elementType.toUpperCase(),
     ];
+  }
+
+  toSql(): string {
+    return `VECTOR(${this._getSqlOptionParts().join(', ')})`;
+  }
+
+  #validateElementType(elementType: string): asserts elementType is VectorElementType {
+    if (!['float16', 'float32', 'float64', 'int8', 'binary'].includes(elementType)) {
+      throw new TypeError(`Invalid VECTOR element type: ${elementType}`);
+    }
+  }
+
+  #validateDimensions(dimensions: number): number {
+    if (!Number.isInteger(dimensions) || dimensions <= 0) {
+      throw new TypeError(`Invalid VECTOR dimensions: ${dimensions}`);
+    }
+
+    return dimensions;
+  }
+
+  #isExpectedArrayType(value: VectorValue): boolean {
+    if (Array.isArray(value)) {
+      return this.options.elementType !== 'binary';
+    }
+
+    switch (this.options.elementType) {
+      case 'float16':
+      case 'float32':
+        return value instanceof Float32Array;
+      case 'float64':
+        return value instanceof Float64Array;
+      case 'int8':
+        return value instanceof Int8Array;
+      case 'binary':
+        return value instanceof Uint8Array;
+    }
+  }
+
+  #toTypedArray(value: VectorValue): VectorTypedArray {
+    switch (this.options.elementType) {
+      case 'float16':
+      case 'float32':
+        return value instanceof Float32Array ? value : Float32Array.from(value);
+      case 'float64':
+        return value instanceof Float64Array ? value : Float64Array.from(value);
+      case 'int8':
+        return value instanceof Int8Array ? value : Int8Array.from(value);
+      case 'binary':
+        return value instanceof Uint8Array ? value : Uint8Array.from(value);
+    }
   }
 }
 
-/**
- * Returns true when the input is one of Sequelize's accepted numeric typed arrays.
- *
- * @param value
- */
-function isTypedArrayIterable(value: unknown): value is NumericTypedArray {
+function isVectorTypedArray(value: unknown): value is VectorTypedArray {
   return (
     value instanceof Int8Array ||
     value instanceof Uint8Array ||
-    value instanceof Uint8ClampedArray ||
-    value instanceof Int16Array ||
-    value instanceof Uint16Array ||
-    value instanceof Int32Array ||
-    value instanceof Uint32Array ||
     value instanceof Float32Array ||
     value instanceof Float64Array
   );
