@@ -321,7 +321,7 @@ if (dialect.startsWith('oracle')) {
           arguments: ['myTable', { embedding: [1, 2, 3] }, { embedding: { type: vectorDialect } }],
           expectation: {
             query: 'INSERT INTO "myTable" ("embedding") VALUES ($sequelize_1);',
-            bind: { sequelize_1: Float64Array.from([1, 2, 3]) },
+            bind: { sequelize_1: Float32Array.from([1, 2, 3]) },
           },
         },
 
@@ -567,7 +567,7 @@ if (dialect.startsWith('oracle')) {
           ],
           expectation: {
             query: 'UPDATE "myTable" SET "embedding"=$sequelize_1 WHERE "id" = $sequelize_2',
-            bind: { sequelize_1: Float64Array.from([4, 5, 6]), sequelize_2: 1 },
+            bind: { sequelize_1: Float32Array.from([4, 5, 6]), sequelize_2: 1 },
           },
         },
         {

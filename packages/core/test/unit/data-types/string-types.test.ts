@@ -251,7 +251,7 @@ describe('DataTypes.VECTOR', () => {
       const Vector = DataTypes.VECTOR as unknown as (
         dimensions: number,
         elementType: string,
-      ) => DataTypes.VECTOR;
+      ) => unknown;
 
       expect(() => Vector(3, 'float64')).to.throw(
         TypeError,
