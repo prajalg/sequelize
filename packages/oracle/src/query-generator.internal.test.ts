@@ -32,6 +32,28 @@ describe('Oracle query generator internals', () => {
     );
   });
 
+  it('uses Oracle VECTOR bindings in insert and update queries', () => {
+    const attributes = {
+      embedding: {
+        attributeName: 'embedding',
+        columnName: 'embedding',
+        fieldName: 'embedding',
+        type: sequelize.normalizeDataType(DataTypes.VECTOR(3)),
+      },
+    };
+    const insert = queryGenerator.insertQuery('items', { embedding: [1, 2, 3] }, attributes);
+    const update = queryGenerator.updateQuery(
+      'items',
+      { embedding: [4, 5, 6] },
+      { id: 1 },
+      {},
+      attributes,
+    );
+
+    expect(insert.bind?.sequelize_1).to.deep.equal(Float32Array.from([1, 2, 3]));
+    expect(update.bind?.sequelize_1).to.deep.equal(Float32Array.from([4, 5, 6]));
+  });
+
   it('reads VECTOR_INFO when the connected database supports vectors', () => {
     sequelize.setDatabaseVersion('23.26.0');
 
