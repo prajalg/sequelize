@@ -114,11 +114,8 @@ export class OracleQueryGeneratorTypeScript extends AbstractQueryGenerator {
 
   showIndexesQuery(table: TableNameWithSchema) {
     const [tableName, owner] = this.getSchemaNameAndTableName(table);
-    const indexSubtypeColumn = this.#supportsIndexSubtypeColumn() ? ', u.index_subtype' : '';
     const sql = [
-      // INDEX_SUBTYPE is available on newer Oracle versions (e.g. 23c+).
-      // Older versions (e.g. 19c) do not expose this column in ALL_INDEXES.
-      `SELECT i.index_name,i.table_name, i.column_name, u.uniqueness, u.index_type${indexSubtypeColumn}, u.ityp_name, i.descend, c.constraint_type `,
+      'SELECT i.index_name,i.table_name, i.column_name, u.uniqueness, i.descend, c.constraint_type ',
       'FROM all_ind_columns i ',
       'INNER JOIN all_indexes u ',
       'ON (u.table_name = i.table_name AND u.index_name = i.index_name) ',
@@ -131,23 +128,6 @@ export class OracleQueryGeneratorTypeScript extends AbstractQueryGenerator {
     ];
 
     return sql.join('');
-  }
-
-  /**
-   * Checks if INDEX_SUBTYPE column is supported in the current Oracle Database version.
-   */
-  #supportsIndexSubtypeColumn(): boolean {
-    const version = this.sequelize.getDatabaseVersionIfExist();
-    if (version == null) {
-      return true;
-    }
-
-    const major = Number.parseInt(version.split('.', 1)[0], 10);
-    if (!Number.isFinite(major)) {
-      return true;
-    }
-
-    return major >= 23;
   }
 
   /**
@@ -459,7 +439,7 @@ export class OracleQueryGeneratorTypeScript extends AbstractQueryGenerator {
     if (attribute.type instanceof DataTypes.ENUM) {
       // enums are a special case
       template = attribute.type.toSql();
-      template += ` CHECK (${this.quoteIdentifier(attribute.field)} IN(${attribute.type.options.values
+      template += ` CHECK (${this.quoteIdentifier(attribute.field!)} IN(${attribute.type.options.values
         .map(value => {
           return this.escape(value);
         })
@@ -470,14 +450,14 @@ export class OracleQueryGeneratorTypeScript extends AbstractQueryGenerator {
 
     if (attribute.type instanceof DataTypes.JSON) {
       template = attribute.type.toSql();
-      template += ` CHECK (${this.quoteIdentifier(attribute.field)} IS JSON)`;
+      template += ` CHECK (${this.quoteIdentifier(attribute.field!)} IS JSON)`;
 
       return template;
     }
 
     if (attribute.type instanceof DataTypes.BOOLEAN) {
       template = attribute.type.toSql();
-      template += ` CHECK (${this.quoteIdentifier(attribute.field)} IN('1', '0'))`;
+      template += ` CHECK (${this.quoteIdentifier(attribute.field!)} IN('1', '0'))`;
 
       return template;
     }
@@ -489,7 +469,7 @@ export class OracleQueryGeneratorTypeScript extends AbstractQueryGenerator {
       const typeOptions = (attribute.type as unknown as { options?: { unsigned?: boolean } })
         .options;
       if (typeOptions?.unsigned) {
-        unsignedTemplate += ` CHECK(${this.quoteIdentifier(attribute.field)} >= 0)`;
+        unsignedTemplate += ` CHECK(${this.quoteIdentifier(attribute.field!)} >= 0)`;
       }
 
       template = attribute.type.toString();

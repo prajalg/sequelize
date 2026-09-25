@@ -48,8 +48,7 @@ export interface QiArithmeticOptions extends QueryRawOptions, Replaceable {
 }
 
 export interface QiUpsertOptions<M extends Model>
-  extends QueryRawOptionsWithModel<M>,
-    Replaceable {}
+  extends QueryRawOptionsWithModel<M>, Replaceable {}
 
 export interface CreateFunctionOptions extends QueryRawOptions {
   force?: boolean;
@@ -76,7 +75,7 @@ export interface TableNameWithSchema {
 
 export type TableName = string | TableNameWithSchema;
 
-export type IndexType = AllowLowercase<'UNIQUE' | 'FULLTEXT' | 'SPATIAL' | 'VECTOR'>;
+export type IndexType = AllowLowercase<'UNIQUE' | 'FULLTEXT' | 'SPATIAL'>;
 export type IndexMethod = 'BTREE' | 'HASH' | 'GIST' | 'SPGIST' | 'GIN' | 'BRIN' | string;
 
 export interface IndexField {
@@ -116,7 +115,7 @@ export interface IndexOptions {
   parser?: string | null;
 
   /**
-   * Index type. Used by MySQL (`UNIQUE`, `FULLTEXT`, `SPATIAL`) and Oracle (`VECTOR`).
+   * Index type. Only used by mysql. One of `UNIQUE`, `FULLTEXT` and `SPATIAL`
    */
   type?: IndexType | undefined;
 
@@ -174,12 +173,10 @@ export interface IndexOptions {
 }
 
 export interface QueryInterfaceIndexOptions
-  extends IndexOptions,
-    Omit<QiOptionsWithReplacements, 'type'> {}
+  extends IndexOptions, Omit<QiOptionsWithReplacements, 'type'> {}
 
 export interface QueryInterfaceRemoveIndexOptions
-  extends QueryInterfaceIndexOptions,
-    RemoveIndexQueryOptions {}
+  extends QueryInterfaceIndexOptions, RemoveIndexQueryOptions {}
 
 export interface FunctionParam {
   type: string;
