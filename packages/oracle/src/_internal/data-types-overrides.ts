@@ -424,3 +424,50 @@ export class DATEONLY extends BaseTypes.DATEONLY {
     return options.bindParam(value);
   }
 }
+
+/**
+ * Maps the shared VECTOR data type to Oracle's native VECTOR declaration and driver bindings.
+ * Oracle VECTOR requires Oracle Database 23.4 or newer.
+ */
+export class VECTOR extends BaseTypes.VECTOR {
+  protected override _getSqlOptionParts(): string[] {
+    return [
+      this.options.dimensions === undefined ? '*' : String(this.options.dimensions),
+      this.options.elementType.toUpperCase(),
+    ];
+  }
+
+  /**
+   * Converts plain arrays to the typed arrays expected by node-oracledb.
+   *
+   * @param value
+   */
+  toBindableValue(value: BaseTypes.VectorValue) {
+    this.validate(value);
+
+    if (Array.isArray(value)) {
+      switch (this.options.elementType) {
+        case 'float16':
+        case 'float32':
+          return Float32Array.from(value);
+        case 'float64':
+          return Float64Array.from(value);
+        case 'int8':
+          return Int8Array.from(value);
+        case 'binary':
+          return Uint8Array.from(value);
+      }
+    }
+
+    return value;
+  }
+
+  /**
+   * Uses node-oracledb's native VECTOR bind type.
+   *
+   * @param oracledb
+   */
+  _getBindDef(oracledb: Lib) {
+    return { type: oracledb.DB_TYPE_VECTOR };
+  }
+}
