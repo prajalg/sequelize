@@ -427,6 +427,7 @@ export class DATEONLY extends BaseTypes.DATEONLY {
 
 /**
  * Maps the shared VECTOR data type to Oracle's native VECTOR declaration and driver bindings.
+ * Oracle VECTOR requires Oracle Database 23.4 or newer.
  */
 export class VECTOR extends BaseTypes.VECTOR {
   protected override _getSqlOptionParts(): string[] {

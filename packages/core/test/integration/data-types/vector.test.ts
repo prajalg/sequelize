@@ -103,6 +103,22 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
     expect(await vars.VectorItem.count()).to.equal(2);
   });
 
+  it('updates and reloads a vector value', async () => {
+    const item = await vars.VectorItem.create({
+      float32Embedding: [1, 2, 3],
+      typedEmbedding: [1, 2, 3],
+      float64Embedding: [1, 2, 3],
+      int8Embedding: [1, 2, 3],
+      binaryEmbedding: new Uint8Array([1, 2, 3]),
+    });
+
+    item.float32Embedding = [4, 5, 6];
+    await item.save();
+    await item.reload();
+
+    expect(item.float32Embedding).to.deep.equal([4, 5, 6]);
+  });
+
   it('does not mark equal vectors as changed across array kinds', async () => {
     const item = await vars.VectorItem.create({
       float32Embedding: [1, 2, 3],
@@ -144,4 +160,59 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
   it('allows sync({ alter: true }) when the VECTOR definition is unchanged', async () => {
     await expect(vars.VectorItem.sync({ alter: true })).to.be.fulfilled;
   });
+
+  if (dialect.name === 'oracle') {
+    it('rejects changing an existing VECTOR definition through sync({ alter: true })', async () => {
+      class OriginalVectorItem extends Model {}
+
+      OriginalVectorItem.init(
+        {
+          id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+          embedding: DataTypes.VECTOR(3),
+        },
+        { sequelize, tableName: 'vector_alter_items', timestamps: false },
+      );
+      await OriginalVectorItem.sync({ force: true });
+
+      class ChangedVectorItem extends Model {}
+
+      ChangedVectorItem.init(
+        {
+          id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+          embedding: DataTypes.VECTOR(4),
+        },
+        { sequelize, tableName: 'vector_alter_items', timestamps: false },
+      );
+
+      await expect(ChangedVectorItem.sync({ alter: true })).to.be.rejectedWith(
+        'Changing Oracle VECTOR column embedding from VECTOR(3, FLOAT32) to VECTOR(4, FLOAT32) is not supported by sync({ alter: true })',
+      );
+    });
+  }
+
+  if (dialect.supports.dataTypes.VECTOR.optionalDimensions) {
+    it('round-trips a vector without fixed dimensions', async () => {
+      class FlexibleVectorItem extends Model<
+        InferAttributes<FlexibleVectorItem>,
+        InferCreationAttributes<FlexibleVectorItem>
+      > {
+        declare id: CreationOptional<number>;
+        declare embedding: VectorValue;
+      }
+
+      FlexibleVectorItem.init(
+        {
+          id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+          embedding: DataTypes.VECTOR(),
+        },
+        { sequelize, timestamps: false },
+      );
+      await FlexibleVectorItem.sync({ force: true });
+
+      const item = await FlexibleVectorItem.create({ embedding: [1, 2, 3, 4] });
+      await item.reload();
+
+      expect(item.embedding).to.deep.equal([1, 2, 3, 4]);
+    });
+  }
 });
