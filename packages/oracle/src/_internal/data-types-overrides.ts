@@ -442,6 +442,8 @@ export class VECTOR extends BaseTypes.VECTOR {
    * @param value
    */
   toBindableValue(value: BaseTypes.VectorValue) {
+    this.validate(value);
+
     if (Array.isArray(value)) {
       switch (this.options.elementType) {
         case 'float16':
