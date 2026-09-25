@@ -247,6 +247,18 @@ describe('DataTypes.VECTOR', () => {
       });
     });
 
+    it('rejects a positional element type', () => {
+      const Vector = DataTypes.VECTOR as unknown as (
+        dimensions: number,
+        elementType: string,
+      ) => DataTypes.VECTOR;
+
+      expect(() => Vector(3, 'float64')).to.throw(
+        TypeError,
+        'Pass elementType in the options object instead',
+      );
+    });
+
     it('rejects invalid dimensions', () => {
       expect(() => DataTypes.VECTOR(0)).to.throw(TypeError, 'Invalid VECTOR dimensions');
       expect(() => DataTypes.VECTOR({ dimensions: 1.5 })).to.throw(

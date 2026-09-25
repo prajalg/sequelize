@@ -2913,8 +2913,14 @@ export class VECTOR extends AbstractDataType<VectorValue> {
   constructor(options: VectorOptions);
   /** @hidden */
   constructor(...args: [] | [dimensions: number] | [options: VectorOptions]);
-  constructor(dimensionsOrOptions?: number | VectorOptions) {
+  constructor(dimensionsOrOptions?: number | VectorOptions, ...unexpectedArgs: unknown[]) {
     super();
+
+    if (unexpectedArgs.length > 0) {
+      throw new TypeError(
+        'VECTOR only accepts dimensions as a positional argument. Pass elementType in the options object instead.',
+      );
+    }
 
     const options =
       typeof dimensionsOrOptions === 'number'
