@@ -140,4 +140,8 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
     expect(document.embedding).to.have.length(1536);
     expect(document.embedding[1024]).to.be.closeTo(embedding[1024], 1e-6);
   });
+
+  it('allows sync({ alter: true }) when the VECTOR definition is unchanged', async () => {
+    await expect(vars.VectorItem.sync({ alter: true })).to.be.fulfilled;
+  });
 });

@@ -1,0 +1,87 @@
+import { DataTypes } from '@sequelize/core';
+import { expect } from 'chai';
+import { getOracleColumnType, shouldSkipOracleVectorColumnChange } from './vector-column-utils';
+
+describe('Oracle VECTOR column utilities', () => {
+  describe('getOracleColumnType', () => {
+    it('adds VECTOR dimensions and element type to described columns', () => {
+      expect(
+        getOracleColumnType({ DATA_TYPE: 'VECTOR', VECTOR_INFO: 'VECTOR(768,float32)' }),
+      ).to.equal('VECTOR(768, FLOAT32)');
+    });
+
+    it('leaves non-VECTOR column types unchanged', () => {
+      expect(getOracleColumnType({ DATA_TYPE: 'varchar2' })).to.equal('VARCHAR2');
+    });
+  });
+
+  describe('shouldSkipOracleVectorColumnChange', () => {
+    const vector = DataTypes.VECTOR(3);
+    const makeQueryInterface = (type: string) => ({
+      normalizeAttribute: () => ({ type: vector, field: 'embedding_vector' }),
+      describeTable: async () => ({ embedding_vector: { type } }),
+    });
+
+    it('skips an unchanged VECTOR definition', async () => {
+      expect(
+        await shouldSkipOracleVectorColumnChange(
+          makeQueryInterface('VECTOR(3,float32)'),
+          'items',
+          'embedding',
+          vector,
+        ),
+      ).to.equal(true);
+    });
+
+    it('throws a clear error for a real VECTOR definition change', async () => {
+      let error: unknown;
+      try {
+        await shouldSkipOracleVectorColumnChange(
+          makeQueryInterface('VECTOR(4, FLOAT32)'),
+          'items',
+          'embedding',
+          vector,
+        );
+      } catch (caughtError) {
+        error = caughtError;
+      }
+
+      expect(error).to.be.instanceOf(Error);
+      expect((error as Error).message).to.include(
+        'Changing Oracle VECTOR column embedding_vector from VECTOR(4, FLOAT32) to VECTOR(3, FLOAT32) is not supported',
+      );
+    });
+
+    it('does not guess when VECTOR metadata is unavailable', async () => {
+      let error: unknown;
+      try {
+        await shouldSkipOracleVectorColumnChange(
+          makeQueryInterface('VECTOR'),
+          'items',
+          'embedding',
+          vector,
+        );
+      } catch (caughtError) {
+        error = caughtError;
+      }
+
+      expect(error).to.be.instanceOf(Error);
+      expect((error as Error).message).to.include(
+        'dimensions and element type were not returned by the database',
+      );
+    });
+
+    it('does not handle non-VECTOR columns', async () => {
+      const queryInterface = {
+        normalizeAttribute: () => ({ type: DataTypes.STRING() }),
+        describeTable: async () => {
+          throw new Error('describeTable should not be called');
+        },
+      };
+
+      expect(
+        await shouldSkipOracleVectorColumnChange(queryInterface, 'items', 'name', DataTypes.STRING),
+      ).to.equal(false);
+    });
+  });
+});

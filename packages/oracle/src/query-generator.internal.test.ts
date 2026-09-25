@@ -31,4 +31,23 @@ describe('Oracle query generator internals', () => {
       'VECTOR_DISTANCE(CAST("firstEmbedding" AS VECTOR(3, FLOAT32)), "secondEmbedding", COSINE)',
     );
   });
+
+  it('reads VECTOR_INFO when the connected database supports vectors', () => {
+    sequelize.setDatabaseVersion('23.26.0');
+
+    expect(queryGenerator.describeTableQuery('items')).to.include('atc.VECTOR_INFO');
+  });
+
+  it('does not read VECTOR_INFO when the database version is unknown or too old', () => {
+    const unknownVersionSequelize = new Sequelize({ dialect: OracleDialect });
+    const oldVersionSequelize = new Sequelize({ dialect: OracleDialect });
+    oldVersionSequelize.setDatabaseVersion('21.3.0');
+
+    expect(unknownVersionSequelize.queryGenerator.describeTableQuery('items')).not.to.include(
+      'atc.VECTOR_INFO',
+    );
+    expect(oldVersionSequelize.queryGenerator.describeTableQuery('items')).not.to.include(
+      'atc.VECTOR_INFO',
+    );
+  });
 });
