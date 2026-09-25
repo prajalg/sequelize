@@ -279,7 +279,7 @@ export class Db2QueryGeneratorTypeScript extends AbstractQueryGenerator {
       const enumType = attribute.type as ENUM<string>;
 
       template = enumType.toSql();
-      template += ` CHECK (${this.quoteIdentifier(attribute.field)} IN(${enumType.options.values
+      template += ` CHECK (${this.quoteIdentifier(attribute.field!)} IN(${enumType.options.values
         .map(value => {
           return this.escape(value);
         })

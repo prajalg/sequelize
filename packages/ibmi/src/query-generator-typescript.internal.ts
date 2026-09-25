@@ -257,7 +257,7 @@ export class IBMiQueryGeneratorTypeScript extends AbstractQueryGenerator {
         template += options.context === 'changeColumn' ? ' ADD' : '';
       }
 
-      template += ` CHECK (${this.quoteIdentifier(attribute.field)} IN(${enumType.options.values
+      template += ` CHECK (${this.quoteIdentifier(attribute.field!)} IN(${enumType.options.values
         .map(value => {
           return this.escape(value);
         })

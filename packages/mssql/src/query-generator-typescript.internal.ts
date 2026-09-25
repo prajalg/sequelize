@@ -383,7 +383,7 @@ SELECT REVERSE(SUBSTRING(@ms_ver, CHARINDEX('.', @ms_ver)+1, 20)) AS 'version'`;
     if (attribute.type instanceof DataTypes.ENUM) {
       // enums are a special case
       template = attribute.type.toSql();
-      template += ` CHECK (${this.quoteIdentifier(attribute.field)} IN(${attribute.type.options.values
+      template += ` CHECK (${this.quoteIdentifier(attribute.field!)} IN(${attribute.type.options.values
         .map(value => {
           // these options are not escape options, but they were passed through in the JS version
           return this.escape(value);

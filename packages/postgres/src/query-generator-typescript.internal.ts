@@ -398,9 +398,9 @@ export class PostgresQueryGeneratorTypeScript extends AbstractQueryGenerator {
 
     if (attribute.comment && typeof attribute.comment === 'string') {
       if (options?.context === 'addColumn' || options?.context === 'changeColumn') {
-        const quotedAttr = this.quoteIdentifier(attribute.field);
+        const quotedAttr = this.quoteIdentifier(attribute.field!);
         const escapedCommentText = this.escape(attribute.comment);
-        sql += `; COMMENT ON COLUMN ${this.quoteTable(options.tableOrModel)}.${quotedAttr} IS ${escapedCommentText}`;
+        sql += `; COMMENT ON COLUMN ${this.quoteTable(options.tableOrModel!)}.${quotedAttr} IS ${escapedCommentText}`;
       } else {
         // for createTable event which does it's own parsing
         // TODO: centralize creation of comment statements here
