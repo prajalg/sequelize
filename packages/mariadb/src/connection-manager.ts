@@ -18,41 +18,43 @@ import type { MariaDbDialect } from './dialect.js';
 
 const debug = logger.debugContext('connection:mariadb');
 
+// Attached by connect() until initializeConnection() replaces it with the real handler.
+function ignoreErrorUntilInitialized() {}
+
 export type MariaDbModule = typeof MariaDb;
 
 export interface MariaDbConnection extends AbstractConnection, MariaDb.Connection {}
 
-export interface MariaDbConnectionOptions
-  extends Omit<
-    MariaDb.ConnectionConfig,
-    // Can only be set by Sequelize to prevent users from making it return a format
-    // that is incompatible with Sequelize
-    | 'typeCast'
-    // Replaced by Sequelize's global option
-    | 'timezone'
-    // Users cannot use MariaDB's placeholders, they use Sequelize's syntax instead
-    | 'namedPlaceholders'
-    | 'arrayParenthesis'
+export interface MariaDbConnectionOptions extends Omit<
+  MariaDb.ConnectionConfig,
+  // Can only be set by Sequelize to prevent users from making it return a format
+  // that is incompatible with Sequelize
+  | 'typeCast'
+  // Replaced by Sequelize's global option
+  | 'timezone'
+  // Users cannot use MariaDB's placeholders, they use Sequelize's syntax instead
+  | 'namedPlaceholders'
+  | 'arrayParenthesis'
 
-    // The following options will conflict with the format expected by Sequelize
-    | 'insertIdAsNumber'
-    | 'metaAsArray'
-    | 'rowsAsArray'
-    | 'nestTables'
-    | 'dateStrings'
-    | 'decimalAsNumber'
-    | 'bigIntAsNumber'
-    | 'supportBigNumbers'
-    | 'bigNumberStrings'
-    | 'autoJsonMap'
-    // This option is not necessary because we do not allow using decimalAsNumber,
-    // insertIdAsNumber, nor bigIntAsNumber.
-    // If someone requests to enable this option, do not accept it.
-    // Instead, the same feature should be added to Sequelize as a cross-dialect feature.
-    | 'checkNumberRange'
-    // unsafe compatibility option
-    | 'permitSetMultiParamEntries'
-  > {}
+  // The following options will conflict with the format expected by Sequelize
+  | 'insertIdAsNumber'
+  | 'metaAsArray'
+  | 'rowsAsArray'
+  | 'nestTables'
+  | 'dateStrings'
+  | 'decimalAsNumber'
+  | 'bigIntAsNumber'
+  | 'supportBigNumbers'
+  | 'bigNumberStrings'
+  | 'autoJsonMap'
+  // This option is not necessary because we do not allow using decimalAsNumber,
+  // insertIdAsNumber, nor bigIntAsNumber.
+  // If someone requests to enable this option, do not accept it.
+  // Instead, the same feature should be added to Sequelize as a cross-dialect feature.
+  | 'checkNumberRange'
+  // unsafe compatibility option
+  | 'permitSetMultiParamEntries'
+> {}
 
 /**
  * MariaDB Connection Manager
@@ -120,17 +122,11 @@ export class MariaDbConnectionManager extends AbstractConnectionManager<
       this.sequelize.setDatabaseVersion(semver.coerce(connection.serverVersion())!.version);
 
       debug('connection acquired');
-      connection.on('error', error => {
-        switch (error.code) {
-          case 'ESOCKET':
-          case 'ECONNRESET':
-          case 'EPIPE':
-          case 'PROTOCOL_CONNECTION_LOST':
-            void this.sequelize.pool.destroy(connection);
-            break;
-          default:
-        }
-      });
+
+      // Temporary no-op placeholder: the driver can emit 'error' before initializeConnection()
+      // attaches the real handler below. Without a listener here, that error would
+      // crash the process instead of waiting to be handled.
+      connection.on('error', ignoreErrorUntilInitialized);
 
       return connection;
     } catch (error: unknown) {
@@ -156,6 +152,20 @@ export class MariaDbConnectionManager extends AbstractConnectionManager<
           throw new ConnectionError(error);
       }
     }
+  }
+
+  async initializeConnection(connection: MariaDbConnection): Promise<void> {
+    connection.off('error', ignoreErrorUntilInitialized).on('error', error => {
+      switch (error.code) {
+        case 'ESOCKET':
+        case 'ECONNRESET':
+        case 'EPIPE':
+        case 'PROTOCOL_CONNECTION_LOST':
+          void this.sequelize.pool.destroy(connection);
+          break;
+        default:
+      }
+    });
   }
 
   async disconnect(connection: MariaDbConnection) {

@@ -20,6 +20,9 @@ import type { PostgresDialect } from './dialect.js';
 
 const debug = logger.debugContext('connection:pg');
 
+// Attached by connect() until initializeConnection() replaces it with the real handler.
+function ignoreErrorUntilInitialized() {}
+
 type TypeFormat = 'text' | 'binary';
 type TextTypeParser = PgTypeParser<string, unknown>;
 type BinaryTypeParser = PgTypeParser<Buffer, unknown>;
@@ -47,8 +50,10 @@ export interface PostgresConnection extends AbstractConnection, Pg.Client {
   _ending?: boolean;
 }
 
-export interface PostgresConnectionOptions
-  extends Omit<ClientConfig, 'types' | 'connectionString'> {
+export interface PostgresConnectionOptions extends Omit<
+  ClientConfig,
+  'types' | 'connectionString'
+> {
   /**
    * !! DO NOT SET THIS TO TRUE !!
    * (unless you know what you're doing)
@@ -121,6 +126,11 @@ export class PostgresConnectionManager extends AbstractConnectionManager<
     };
 
     const connection: PostgresConnection = new this.#lib.Client(connectionConfig);
+
+    // Temporary no-op placeholder: node-postgres can emit 'error' before initializeConnection()
+    // attaches the real handler below. Without a listener here, that error would
+    // crash the process instead of waiting to be handled.
+    connection.on('error', ignoreErrorUntilInitialized);
 
     await new Promise((resolve, reject) => {
       let responded = false;
@@ -197,8 +207,12 @@ export class PostgresConnectionManager extends AbstractConnectionManager<
       });
     });
 
-    // Don't let a Postgres restart (or error) to take down the whole app
-    connection.on('error', (error: any) => {
+    return connection;
+  }
+
+  async initializeConnection(connection: PostgresConnection): Promise<void> {
+    // Don't let a Postgres restart (or error) to take down the whole app.
+    connection.off('error', ignoreErrorUntilInitialized).on('error', (error: any) => {
       connection._invalid = true;
       debug(`connection error ${error.code || error.message}`);
       void this.sequelize.pool.destroy(connection);
@@ -235,8 +249,6 @@ export class PostgresConnectionManager extends AbstractConnectionManager<
     }
 
     await this.#refreshOidMap(connection);
-
-    return connection;
   }
 
   async disconnect(connection: PostgresConnection): Promise<void> {
