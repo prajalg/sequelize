@@ -95,5 +95,55 @@ describe('Oracle VECTOR column utilities', () => {
         await shouldSkipOracleVectorColumnChange(queryInterface, 'items', 'name', DataTypes.STRING),
       ).to.equal(false);
     });
+
+    it('does not handle raw or missing column types', async () => {
+      const results = await Promise.all(
+        [() => ({ type: 'VARCHAR2(100)' }), () => ({})].map(async normalizeAttribute => {
+          const queryInterface = {
+            normalizeAttribute,
+            describeTable: async () => {
+              throw new Error('describeTable should not be called');
+            },
+          };
+
+          return shouldSkipOracleVectorColumnChange(
+            queryInterface,
+            'items',
+            'name',
+            'VARCHAR2(100)',
+          );
+        }),
+      );
+
+      expect(results).to.deep.equal([false, false]);
+    });
+
+    it('rejects nullability changes for an unchanged VECTOR definition', async () => {
+      const queryInterface = {
+        normalizeAttribute: () => ({
+          type: vector,
+          field: 'embedding_vector',
+          allowNull: false,
+        }),
+        describeTable: async () => ({
+          embedding_vector: { type: 'VECTOR(3, FLOAT32)', allowNull: true },
+        }),
+      };
+
+      let error: unknown;
+      try {
+        await shouldSkipOracleVectorColumnChange(queryInterface, 'items', 'embedding', {
+          type: vector,
+          allowNull: false,
+        });
+      } catch (caughtError) {
+        error = caughtError;
+      }
+
+      expect(error).to.be.instanceOf(Error);
+      expect((error as Error).message).to.include(
+        'Changing nullability of Oracle VECTOR column embedding_vector is not supported',
+      );
+    });
   });
 });

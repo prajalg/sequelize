@@ -2,13 +2,17 @@ import type { TableOrModel } from '@sequelize/core';
 
 interface OracleColumnMetadata {
   type: string;
+  allowNull?: boolean;
 }
 
 interface NormalizedAttribute {
-  type: {
-    getDataTypeId(): string;
-    toSql(): string;
-  };
+  type?:
+    | string
+    | {
+        getDataTypeId(): string;
+        toSql(): string;
+      };
+  allowNull?: boolean;
   field?: string;
   columnName?: string;
 }
@@ -64,7 +68,13 @@ export async function shouldSkipOracleVectorColumnChange(
   options?: object,
 ): Promise<boolean> {
   const attribute = queryInterface.normalizeAttribute(dataTypeOrOptions);
-  if (attribute.type.getDataTypeId() !== 'VECTOR') {
+  const type = attribute.type;
+  if (
+    typeof type !== 'object' ||
+    type === null ||
+    typeof type.getDataTypeId !== 'function' ||
+    type.getDataTypeId() !== 'VECTOR'
+  ) {
     return false;
   }
 
@@ -77,9 +87,19 @@ export async function shouldSkipOracleVectorColumnChange(
   }
 
   const currentType = normalizeVectorSql(currentColumn.type);
-  const requestedType = normalizeVectorSql(attribute.type.toSql());
+  const requestedType = normalizeVectorSql(type.toSql());
 
   if (currentType === requestedType) {
+    if (
+      attribute.allowNull !== undefined &&
+      currentColumn.allowNull !== undefined &&
+      attribute.allowNull !== currentColumn.allowNull
+    ) {
+      throw new Error(
+        `Changing nullability of Oracle VECTOR column ${columnName} is not supported by sync({ alter: true }). Use an explicit migration.`,
+      );
+    }
+
     return true;
   }
 
@@ -90,7 +110,7 @@ export async function shouldSkipOracleVectorColumnChange(
   }
 
   throw new Error(
-    `Changing Oracle VECTOR column ${columnName} from ${currentColumn.type} to ${attribute.type.toSql()} is not supported by sync({ alter: true }). Use an explicit migration to recreate the column.`,
+    `Changing Oracle VECTOR column ${columnName} from ${currentColumn.type} to ${type.toSql()} is not supported by sync({ alter: true }). Use an explicit migration to recreate the column.`,
   );
 }
 
