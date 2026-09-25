@@ -3012,6 +3012,10 @@ export class VECTOR extends AbstractDataType<VectorValue> {
   }
 
   areValuesEqual(value: VectorValue, originalValue: VectorValue): boolean {
+    if (value == null || originalValue == null) {
+      return value === originalValue;
+    }
+
     return (
       value.length === originalValue.length &&
       value.every((element, index) => element === originalValue[index])

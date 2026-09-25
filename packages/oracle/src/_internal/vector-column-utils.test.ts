@@ -10,6 +10,18 @@ describe('Oracle VECTOR column utilities', () => {
       ).to.equal('VECTOR(768, FLOAT32)');
     });
 
+    it('normalizes Oracle dense storage metadata without treating it as a type change', () => {
+      expect(
+        getOracleColumnType({ DATA_TYPE: 'VECTOR', VECTOR_INFO: 'VECTOR(768,float32,DENSE)' }),
+      ).to.equal('VECTOR(768, FLOAT32)');
+    });
+
+    it('preserves sparse storage metadata so it cannot match a dense VECTOR definition', () => {
+      expect(
+        getOracleColumnType({ DATA_TYPE: 'VECTOR', VECTOR_INFO: 'VECTOR(768,float32,SPARSE)' }),
+      ).to.equal('VECTOR(768, FLOAT32) SPARSE');
+    });
+
     it('leaves non-VECTOR column types unchanged', () => {
       expect(getOracleColumnType({ DATA_TYPE: 'varchar2' })).to.equal('VARCHAR2');
     });

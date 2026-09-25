@@ -298,5 +298,11 @@ See https://sequelize.org/docs/v7/models/data-types/ for a list of supported dat
       expect(type.areValuesEqual([1, 2, 3], new Float32Array([1, 2, 3]))).to.be.true;
       expect(type.areValuesEqual([1, 2, 3], new Float32Array([1, 2, 4]))).to.be.false;
     });
+
+    it('handles a missing original value during model construction', () => {
+      const type = DataTypes.VECTOR(3);
+
+      expect(type.areValuesEqual([1, 2, 3], undefined as never)).to.be.false;
+    });
   });
 });
