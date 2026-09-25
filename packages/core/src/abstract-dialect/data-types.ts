@@ -2867,11 +2867,11 @@ export class TSVECTOR extends AbstractDataType<string> {
 export type VectorElementType = 'float16' | 'float32' | 'float64' | 'int8' | 'binary';
 
 export interface VectorOptions {
-  /** The number of elements in the vector. */
+  /** The number of logical dimensions in the vector. */
   dimensions?: number;
-  /** The numeric format used to store each element. */
+  /** The format used to store each element. Defaults to `float32`. */
   elementType?: VectorElementType;
-  /** Return typed arrays instead of plain arrays when reading values. */
+  /** Return a matching typed array instead of `number[]` when reading values. Binary vectors always use `Uint8Array`. */
   typedArray?: boolean;
 }
 
@@ -2881,15 +2881,14 @@ export type VectorValue = number[] | VectorTypedArray;
 /**
  * The VECTOR type stores ordered numeric vectors.
  *
- * Availability depends on the dialect (for example Oracle, Snowflake, pgvector, ...); check your dialect’s
- * documentation to confirm supported element formats and dimensions.
+ * Availability depends on the dialect; check your dialect's documentation for supported element formats
+ * and dimension limits.
  *
  * __Fallback policy:__
  * If this type is not supported, an error will be raised.
  *
- * This shared base exists for dialect-specific VECTOR implementations. Dialects that can use Sequelize's
- * generic {@link VectorOptions} may extend {@link VECTOR}; dialects with a different option shape may extend
- * this class directly with their own options type.
+ * This class defines the shared VECTOR API, validation, and result conversion. Dialect implementations can
+ * extend it to provide native SQL rendering and database-driver bindings.
  *
  * @example
  * ```ts

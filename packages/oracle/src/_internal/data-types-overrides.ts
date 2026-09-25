@@ -426,7 +426,7 @@ export class DATEONLY extends BaseTypes.DATEONLY {
 }
 
 /**
- * Oracle VECTOR data type implementation.
+ * Maps the shared VECTOR data type to Oracle's native VECTOR declaration and driver bindings.
  */
 export class VECTOR extends BaseTypes.VECTOR {
   protected override _getSqlOptionParts(): string[] {
@@ -437,7 +437,7 @@ export class VECTOR extends BaseTypes.VECTOR {
   }
 
   /**
-   * Converts values to Oracle bindable vector values.
+   * Converts plain arrays to the typed arrays expected by node-oracledb.
    *
    * @param value
    */
@@ -462,7 +462,7 @@ export class VECTOR extends BaseTypes.VECTOR {
   }
 
   /**
-   * Returns Oracle bind definition for vector values.
+   * Uses node-oracledb's native VECTOR bind type.
    *
    * @param oracledb
    */
