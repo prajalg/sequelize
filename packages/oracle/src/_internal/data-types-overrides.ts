@@ -446,8 +446,12 @@ export class VECTOR extends BaseTypes.VECTOR {
     this.validate(value);
 
     if (Array.isArray(value)) {
-      switch (this.options.elementType) {
-        case 'float16':
+      const { elementType } = this.options;
+      if (elementType === 'float16') {
+        throw new Error('Oracle does not support FLOAT16 VECTOR values');
+      }
+
+      switch (elementType) {
         case 'float32':
           return Float32Array.from(value);
         case 'float64':
