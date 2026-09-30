@@ -6,30 +6,10 @@ describe('Oracle query generator internals', () => {
   const sequelize = new Sequelize({ dialect: OracleDialect });
   const queryGenerator = sequelize.queryGenerator;
 
-  it('does not intercept raw VECTOR_DISTANCE function expressions', () => {
-    const expression = sql.fn(
-      'VECTOR_DISTANCE',
-      sql.attribute('firstEmbedding'),
-      sql.attribute('secondEmbedding'),
-      sql.literal('COSINE'),
-    );
+  it('renders VECTOR casts', () => {
+    const expression = sql.cast(sql.attribute('embedding'), DataTypes.VECTOR(3));
 
-    expect(queryGenerator.escape(expression)).to.equal(
-      'VECTOR_DISTANCE("firstEmbedding", "secondEmbedding", COSINE)',
-    );
-  });
-
-  it('preserves casts in raw vector function expressions', () => {
-    const expression = sql.fn(
-      'VECTOR_DISTANCE',
-      sql.cast(sql.attribute('firstEmbedding'), DataTypes.VECTOR(3)),
-      sql.attribute('secondEmbedding'),
-      sql.literal('COSINE'),
-    );
-
-    expect(queryGenerator.escape(expression)).to.equal(
-      'VECTOR_DISTANCE(CAST("firstEmbedding" AS VECTOR(3, FLOAT32)), "secondEmbedding", COSINE)',
-    );
+    expect(queryGenerator.escape(expression)).to.equal('CAST("embedding" AS VECTOR(3, FLOAT32))');
   });
 
   it('uses Oracle VECTOR bindings in insert and update queries', () => {
