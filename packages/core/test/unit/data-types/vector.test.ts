@@ -114,6 +114,16 @@ describe('DataTypes.VECTOR', () => {
       }
     });
 
+    it('dialect VECTOR implementations are instances of DataTypes.VECTOR', () => {
+      if (!support) {
+        return;
+      }
+
+      const dialectVector = sequelize.normalizeDataType(DataTypes.VECTOR(1));
+
+      expect(dialectVector).to.be.instanceOf(DataTypes.VECTOR);
+    });
+
     it('enforces the maximum dimensions declared for each element type', () => {
       if (!support) {
         return;
