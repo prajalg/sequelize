@@ -73,6 +73,7 @@ describe('DataTypes.VECTOR', () => {
       );
     });
 
+    // will add sparse support in later PRs
     it('rejects unknown options instead of silently dropping them', () => {
       expect(() => DataTypes.VECTOR({ dimensions: 3, storage: 'sparse' } as never)).to.throw(
         TypeError,
