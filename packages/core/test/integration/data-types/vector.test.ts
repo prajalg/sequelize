@@ -4,7 +4,7 @@ import type {
   InferCreationAttributes,
   VectorValue,
 } from '@sequelize/core';
-import { DataTypes, Model } from '@sequelize/core';
+import { DataTypes, Model, sql } from '@sequelize/core';
 import { expect } from 'chai';
 import semver from 'semver';
 import { beforeEach2, getTestDialectTeaser, sequelize } from '../support';
@@ -47,7 +47,10 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
           primaryKey: true,
           autoIncrement: true,
         },
-        float32Embedding: DataTypes.VECTOR(3),
+        float32Embedding: {
+          type: DataTypes.VECTOR(3),
+          columnName: 'float32_embedding',
+        },
         typedEmbedding: DataTypes.VECTOR({ dimensions: 3, typedArray: true }),
         float64Embedding: DataTypes.VECTOR({ dimensions: 3, elementType: 'float64' }),
         int8Embedding: DataTypes.VECTOR({ dimensions: 3, elementType: 'int8' }),
@@ -153,9 +156,158 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
     const document = await Document.create({ embedding });
     await document.reload();
 
+    const nearest = await Document.findOne({
+      order: [sql.vectorDistance(sql.attribute('embedding'), embedding, 'cosine')],
+    });
+
     expect(document.embedding).to.have.length(1536);
     expect(document.embedding[1024]).to.be.closeTo(embedding[1024], 1e-6);
+    expect(nearest?.id).to.equal(document.id);
   });
+
+  if (dialect.supports.vectorDistance) {
+    it('orders rows by vector distance using a mapped attribute', async () => {
+      const items = await vars.VectorItem.bulkCreate([
+        {
+          float32Embedding: [1, 0, 0],
+          typedEmbedding: [1, 0, 0],
+          float64Embedding: [1, 0, 0],
+          int8Embedding: [1, 0, 0],
+          binaryEmbedding: new Uint8Array([1, 0, 0]),
+        },
+        {
+          float32Embedding: [0, 1, 0],
+          typedEmbedding: [0, 1, 0],
+          float64Embedding: [0, 1, 0],
+          int8Embedding: [0, 1, 0],
+          binaryEmbedding: new Uint8Array([0, 1, 0]),
+        },
+      ]);
+
+      const nearest = await vars.VectorItem.findAll({
+        order: [sql.vectorDistance(sql.attribute('float32Embedding'), [1, 0, 0], 'cosine')],
+      });
+
+      expect(nearest.map(item => item.id)).to.deep.equal([items[0].id, items[1].id]);
+    });
+
+    it('binds literal vectors using the column element type', async () => {
+      const item = await vars.VectorItem.create({
+        float32Embedding: [1, 0, 0],
+        typedEmbedding: [1, 0, 0],
+        float64Embedding: [1, 0, 0],
+        int8Embedding: [1, 0, 0],
+        binaryEmbedding: new Uint8Array([0b1111_0000, 0, 0]),
+      });
+
+      const float64Nearest = await vars.VectorItem.findOne({
+        order: [sql.vectorDistance(sql.attribute('float64Embedding'), [1, 0, 0], 'euclidean')],
+      });
+      const int8Nearest = await vars.VectorItem.findOne({
+        order: [sql.vectorDistance(sql.attribute('int8Embedding'), [1, 0, 0], 'manhattan')],
+      });
+      const binaryNearest = await vars.VectorItem.findOne({
+        order: [
+          sql.vectorDistance(
+            sql.attribute('binaryEmbedding'),
+            new Uint8Array([0b1111_0000, 0, 0]),
+            'hamming',
+          ),
+        ],
+      });
+
+      expect(float64Nearest?.id).to.equal(item.id);
+      expect(int8Nearest?.id).to.equal(item.id);
+      expect(binaryNearest?.id).to.equal(item.id);
+    });
+
+    it('supports column-to-column vector distances', async () => {
+      const item = await vars.VectorItem.create({
+        float32Embedding: [1, 2, 3],
+        typedEmbedding: [1, 2, 3],
+        float64Embedding: [1, 2, 3],
+        int8Embedding: [1, 2, 3],
+        binaryEmbedding: new Uint8Array([1, 2, 3]),
+      });
+
+      const nearest = await vars.VectorItem.findOne({
+        order: [
+          sql.vectorDistance(
+            sql.attribute('float32Embedding'),
+            sql.attribute('typedEmbedding'),
+            'cosine',
+          ),
+        ],
+      });
+
+      expect(nearest?.id).to.equal(item.id);
+    });
+
+    it('resolves mapped VECTOR attributes through an include', async () => {
+      class VectorCollection extends Model {}
+
+      class IncludedVectorItem extends Model {}
+
+      VectorCollection.init(
+        { id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true } },
+        { sequelize, timestamps: false },
+      );
+      IncludedVectorItem.init(
+        {
+          id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+          collectionId: DataTypes.INTEGER,
+          embedding: {
+            type: DataTypes.VECTOR(3),
+            columnName: 'embedding_vector',
+          },
+        },
+        { sequelize, timestamps: false },
+      );
+      VectorCollection.hasMany(IncludedVectorItem, {
+        as: 'items',
+        foreignKey: 'collectionId',
+      });
+      await sequelize.sync({ force: true });
+
+      const collection = await VectorCollection.create();
+      await IncludedVectorItem.create({
+        collectionId: collection.get('id'),
+        embedding: [1, 0, 0],
+      });
+
+      const result = await VectorCollection.findAll({
+        include: [{ association: 'items' }],
+        order: [sql.vectorDistance(sql.attribute('$items.embedding$'), [1, 0, 0], 'cosine')],
+      });
+
+      expect(result).to.have.length(1);
+    });
+
+    it('treats dot as a distance with smaller values ranked first', async () => {
+      const items = await vars.VectorItem.bulkCreate([
+        {
+          float32Embedding: [1, 0, 0],
+          typedEmbedding: [1, 0, 0],
+          float64Embedding: [1, 0, 0],
+          int8Embedding: [1, 0, 0],
+          binaryEmbedding: new Uint8Array([1, 0, 0]),
+        },
+        {
+          float32Embedding: [-1, 0, 0],
+          typedEmbedding: [-1, 0, 0],
+          float64Embedding: [-1, 0, 0],
+          int8Embedding: [-1, 0, 0],
+          binaryEmbedding: new Uint8Array([0, 1, 0]),
+        },
+      ]);
+
+      const nearest = await vars.VectorItem.findAll({
+        order: [sql.vectorDistance(sql.attribute('float32Embedding'), [1, 0, 0], 'dot')],
+      });
+
+      expect(nearest.map(item => item.id)).to.deep.equal([items[0].id, items[1].id]);
+    });
+  }
 
   it('allows sync({ alter: true }) when the VECTOR definition is unchanged', async () => {
     await expect(vars.VectorItem.sync({ alter: true })).to.be.fulfilled;
