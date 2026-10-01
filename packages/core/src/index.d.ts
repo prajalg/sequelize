@@ -61,6 +61,7 @@ export { JSON_NULL, SQL_NULL } from './expression-builders/json-sql-null.js';
 export { List } from './expression-builders/list.js';
 export { sql } from './expression-builders/sql.js';
 export { Value } from './expression-builders/value.js';
+export type { VectorMetric } from './expression-builders/vector-distance.js';
 export { GeoJsonType } from './geo-json.js';
 export type {
   GeoJson,
