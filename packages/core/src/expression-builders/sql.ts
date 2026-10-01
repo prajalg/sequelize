@@ -12,6 +12,7 @@ import { Literal, literal } from './literal.js';
 import { Random } from './random.js';
 import { SqlUuidV1, SqlUuidV4, SqlUuidV7 } from './uuid.js';
 import { Value } from './value.js';
+import { vectorDistance } from './vector-distance.js';
 import { where } from './where.js';
 
 /**
@@ -76,4 +77,5 @@ sql.uuidV4 = SqlUuidV4.build();
 sql.uuidV7 = SqlUuidV7.build();
 sql.random = Random.build();
 sql.unquote = Unquote.build.bind(Unquote);
+sql.vectorDistance = vectorDistance;
 sql.join = joinSql;
