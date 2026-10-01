@@ -66,6 +66,17 @@ export class OracleDialect extends AbstractDialect<OracleDialectOptions, OracleC
         precision: false,
       },
     },
+    vectorDistance: {
+      metrics: [
+        'cosine',
+        'euclidean',
+        'euclideanSquared',
+        'manhattan',
+        'dot',
+        'hamming',
+        'jaccard',
+      ],
+    },
     jsonOperations: true,
     jsonExtraction: {
       quoted: true,

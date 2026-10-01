@@ -13,6 +13,7 @@ describe('sql.vectorDistance', () => {
         ),
       {
         default: new Error('Function VectorDistance is not supported'),
+        oracle: 'VECTOR_DISTANCE("embedding", "target", COSINE)',
       },
     );
   });
