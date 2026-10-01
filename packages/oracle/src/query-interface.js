@@ -4,8 +4,25 @@ import { AbstractQueryInterface, QueryTypes } from '@sequelize/core';
 import { assertNoReservedBind } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/sql.js';
 import intersection from 'lodash/intersection.js';
 import uniq from 'lodash/uniq.js';
+import { shouldSkipOracleVectorColumnChange } from './_internal/vector-column-utils.js';
 
 export class OracleQueryInterface extends AbstractQueryInterface {
+  async changeColumn(tableName, attributeName, dataTypeOrOptions, options) {
+    if (
+      await shouldSkipOracleVectorColumnChange(
+        this,
+        tableName,
+        attributeName,
+        dataTypeOrOptions,
+        options,
+      )
+    ) {
+      return;
+    }
+
+    return super.changeColumn(tableName, attributeName, dataTypeOrOptions, options);
+  }
+
   async upsert(tableName, insertValues, updateValues, where, options) {
     if (options.bind) {
       assertNoReservedBind(options.bind);
