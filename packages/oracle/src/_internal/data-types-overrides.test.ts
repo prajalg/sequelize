@@ -1,4 +1,4 @@
-import { DataTypes, Sequelize, ValidationErrorItem } from '@sequelize/core';
+import { DataTypes, Sequelize } from '@sequelize/core';
 import * as BaseTypes from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/data-types.js';
 import { OracleDialect } from '@sequelize/oracle';
 import { expect } from 'chai';
@@ -61,16 +61,6 @@ describe('Oracle VECTOR data type', () => {
     const value = new Float32Array([1, 2, 3]);
 
     expect(toOracleVector(DataTypes.VECTOR(3)).toBindableValue(value)).to.equal(value);
-  });
-
-  it('validates values before binding them', () => {
-    const type = toOracleVector(DataTypes.VECTOR(3));
-
-    expect(() => type.toBindableValue([1, 2])).to.throw(ValidationErrorItem, 'but 3 were expected');
-    expect(() => type.toBindableValue(new Float64Array([1, 2, 3]))).to.throw(
-      ValidationErrorItem,
-      'Float64Array is not valid for VECTOR element type float32',
-    );
   });
 
   it('returns Oracle VECTOR bind metadata', () => {

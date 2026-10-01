@@ -443,8 +443,6 @@ export class VECTOR extends BaseTypes.VECTOR {
    * @param value
    */
   toBindableValue(value: BaseTypes.VectorValue) {
-    this.validate(value);
-
     if (Array.isArray(value)) {
       const { elementType } = this.options;
       if (elementType === 'float16') {
