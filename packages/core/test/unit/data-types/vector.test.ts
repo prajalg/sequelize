@@ -32,7 +32,7 @@ describe('DataTypes.VECTOR', () => {
       });
     });
 
-    it('supports RFC-style options', () => {
+    it('supports the options object', () => {
       const type = DataTypes.VECTOR({
         dimensions: 8,
         elementType: 'float64',

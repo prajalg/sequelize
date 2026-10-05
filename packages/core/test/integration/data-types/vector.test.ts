@@ -16,16 +16,15 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
     return;
   }
 
-  before(async function () {
-    if (dialect.name !== 'oracle') {
-      return;
-    }
+  if (dialect.name === 'oracle') {
+    before(async function checkOracleVersionForVectorSupport() {
+      const databaseVersion = semver.coerce(await sequelize.fetchDatabaseVersion());
 
-    const databaseVersion = semver.coerce(await sequelize.fetchDatabaseVersion());
-    if (!databaseVersion || semver.lt(databaseVersion, '23.4.0')) {
-      this.skip();
-    }
-  });
+      if (!databaseVersion || semver.lt(databaseVersion, '23.4.0')) {
+        this.skip();
+      }
+    });
+  }
 
   const vars = beforeEach2(async () => {
     class VectorItem extends Model<
