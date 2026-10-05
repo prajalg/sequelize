@@ -2983,6 +2983,16 @@ export class VECTOR extends AbstractDataType<VectorValue> {
       );
     }
 
+    this._validateVectorElements(value);
+  }
+
+  /**
+   * Validates each vector element. Iterating over high-dimensional vectors can be expensive, so dialects
+   * may override this method when their database driver performs equivalent element validation.
+   *
+   * @param value The vector value to validate.
+   */
+  protected _validateVectorElements(value: VectorValue): void {
     for (const element of value) {
       if (typeof element !== 'number' || !Number.isFinite(element)) {
         ValidationErrorItem.throwDataTypeValidationError(

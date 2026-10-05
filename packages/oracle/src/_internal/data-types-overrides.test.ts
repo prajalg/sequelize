@@ -63,6 +63,12 @@ describe('Oracle VECTOR data type', () => {
     expect(toOracleVector(DataTypes.VECTOR(3)).toBindableValue(value)).to.equal(value);
   });
 
+  it('uses core element validation', () => {
+    const type = toOracleVector(DataTypes.VECTOR(3));
+
+    expect(() => type.validate([1, Number.NaN, 3])).to.throw('not a valid vector element');
+  });
+
   it('returns Oracle VECTOR bind metadata', () => {
     const type = toOracleVector(DataTypes.VECTOR(3));
 

@@ -1,5 +1,6 @@
-import type { DataTypeInstance, VectorElementType } from '@sequelize/core';
+import type { DataTypeInstance, VectorElementType, VectorValue } from '@sequelize/core';
 import { DataTypes, ValidationErrorItem } from '@sequelize/core';
+import * as BaseTypes from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/data-types.js';
 import { expect } from 'chai';
 import { sequelize } from '../../support';
 import { testDataTypeSql } from './_utils';
@@ -272,6 +273,21 @@ See https://sequelize.org/docs/v7/models/data-types/ for a list of supported dat
       expect(() => type.validate([1, 2, 3])).to.throw(
         ValidationErrorItem,
         'Array is not valid for VECTOR element type binary',
+      );
+    });
+
+    it('allows dialects to delegate element validation while retaining structural validation', () => {
+      class DriverValidatedVector extends BaseTypes.VECTOR {
+        protected override _validateVectorElements(_value: VectorValue): void {}
+      }
+
+      const type = new DriverValidatedVector(2);
+
+      expect(() => type.validate([1, Number.NaN])).not.to.throw();
+      expect(() => type.validate([1])).to.throw(ValidationErrorItem, 'but 2 were expected');
+      expect(() => type.validate('vector')).to.throw(
+        ValidationErrorItem,
+        "'vector' is not a valid vector",
       );
     });
   });
