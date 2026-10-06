@@ -3015,7 +3015,7 @@ export class VECTOR extends AbstractDataType<VectorValue> {
     this.validate(value);
 
     if (this.options.elementType === 'binary' || this.options.typedArray) {
-      return this.#toTypedArray(value);
+      return this._toTypedArray(value);
     }
 
     return [...value];
@@ -3100,7 +3100,12 @@ export class VECTOR extends AbstractDataType<VectorValue> {
     }
   }
 
-  #toTypedArray(value: VectorValue): VectorTypedArray {
+  /**
+   * Converts a vector value to the typed array matching its element type.
+   *
+   * @param value The vector value to convert.
+   */
+  protected _toTypedArray(value: VectorValue): VectorTypedArray {
     switch (this.options.elementType) {
       case 'float16':
       case 'float32':

@@ -443,25 +443,15 @@ export class VECTOR extends BaseTypes.VECTOR {
    * @param value
    */
   toBindableValue(value: BaseTypes.VectorValue) {
-    if (Array.isArray(value)) {
-      const { elementType } = this.options;
-      if (elementType === 'float16') {
-        throw new Error('Oracle does not support FLOAT16 VECTOR values');
-      }
-
-      switch (elementType) {
-        case 'float32':
-          return Float32Array.from(value);
-        case 'float64':
-          return Float64Array.from(value);
-        case 'int8':
-          return Int8Array.from(value);
-        case 'binary':
-          return Uint8Array.from(value);
-      }
+    if (!Array.isArray(value)) {
+      return value;
     }
 
-    return value;
+    if (this.options.elementType === 'float16') {
+      throw new Error('Oracle does not support FLOAT16 VECTOR values');
+    }
+
+    return this._toTypedArray(value);
   }
 
   /**
