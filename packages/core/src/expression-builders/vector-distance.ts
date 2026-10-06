@@ -25,7 +25,7 @@ const VECTOR_METRICS = new Set<VectorMetric>([
 ]);
 
 /**
- * Do not use me directly. Use {@link @sequelize/core!sql.vectorDistance}.
+ * Do not use me directly. Use `sql.vectorDistance` instead.
  */
 export class VectorDistance extends DialectAwareFn {
   readonly metric: VectorMetric;
