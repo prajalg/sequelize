@@ -3,9 +3,10 @@ import type {
   InferAttributes,
   InferCreationAttributes,
   VectorElementType,
+  VectorMetric,
   VectorValue,
 } from '@sequelize/core';
-import { DataTypes, Model } from '@sequelize/core';
+import { DataTypes, Model, sql } from '@sequelize/core';
 import { expect } from 'chai';
 import semver from 'semver';
 import { beforeEach2, getTestDialectTeaser, sequelize } from '../support';
@@ -169,6 +170,196 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
 
         expect(item.changed('embedding')).to.equal(false);
       });
+    });
+  }
+
+  const vectorDistanceSupport = dialect.supports.vectorDistance;
+  const supportsDistanceMetric = (metric: string, elementType: VectorElementType) =>
+    vectorDistanceSupport &&
+    vectorDistanceSupport.metrics.includes(metric as never) &&
+    vectorSupport.elementTypes[elementType];
+
+  if (supportsDistanceMetric('cosine', 'float32')) {
+    describe('cosine vector distance', () => {
+      const vars = beforeEach2(async () => {
+        class VectorItem extends Model<
+          InferAttributes<VectorItem>,
+          InferCreationAttributes<VectorItem>
+        > {
+          declare id: CreationOptional<number>;
+          declare embedding: VectorValue;
+          declare comparisonEmbedding: VectorValue;
+        }
+
+        VectorItem.init(
+          {
+            id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+            embedding: {
+              type: DataTypes.VECTOR(3),
+              columnName: 'embedding_vector',
+            },
+            comparisonEmbedding: DataTypes.VECTOR(3),
+          },
+          { sequelize, timestamps: false },
+        );
+        await VectorItem.sync({ force: true });
+
+        return { VectorItem };
+      });
+
+      it('orders rows by distance using a mapped attribute', async () => {
+        const items = await vars.VectorItem.bulkCreate([
+          { embedding: [1, 0, 0], comparisonEmbedding: [1, 0, 0] },
+          { embedding: [0, 1, 0], comparisonEmbedding: [0, 1, 0] },
+        ]);
+
+        const nearest = await vars.VectorItem.findAll({
+          order: [sql.vectorDistance(sql.attribute('embedding'), [1, 0, 0], 'cosine')],
+        });
+
+        expect(nearest.map(item => item.id)).to.deep.equal([items[0].id, items[1].id]);
+      });
+
+      it('supports column-to-column vector distances', async () => {
+        const item = await vars.VectorItem.create({
+          embedding: [1, 2, 3],
+          comparisonEmbedding: [1, 2, 3],
+        });
+
+        const nearest = await vars.VectorItem.findOne({
+          order: [
+            sql.vectorDistance(
+              sql.attribute('embedding'),
+              sql.attribute('comparisonEmbedding'),
+              'cosine',
+            ),
+          ],
+        });
+
+        expect(nearest?.id).to.equal(item.id);
+      });
+    });
+
+    it('resolves mapped VECTOR attributes through an include', async () => {
+      class VectorCollection extends Model {}
+
+      class IncludedVectorItem extends Model {}
+
+      VectorCollection.init(
+        { id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true } },
+        { sequelize, timestamps: false },
+      );
+      IncludedVectorItem.init(
+        {
+          id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+          collectionId: DataTypes.INTEGER,
+          embedding: {
+            type: DataTypes.VECTOR(3),
+            columnName: 'embedding_vector',
+          },
+        },
+        { sequelize, timestamps: false },
+      );
+      VectorCollection.hasMany(IncludedVectorItem, {
+        as: 'items',
+        foreignKey: 'collectionId',
+      });
+      await sequelize.sync({ force: true });
+
+      const collection = await VectorCollection.create();
+      await IncludedVectorItem.create({
+        collectionId: collection.get('id'),
+        embedding: [1, 0, 0],
+      });
+
+      const result = await VectorCollection.findAll({
+        include: [{ association: 'items' }],
+        order: [sql.vectorDistance(sql.attribute('$items.embedding$'), [1, 0, 0], 'cosine')],
+      });
+
+      expect(result).to.have.length(1);
+    });
+  }
+
+  const distanceTestCases: ReadonlyArray<{
+    elementType: VectorElementType;
+    dimensions: number;
+    metric: VectorMetric;
+    value: VectorValue;
+  }> = [
+    { elementType: 'float64' as const, dimensions: 3, metric: 'euclidean', value: [1, 0, 0] },
+    { elementType: 'int8' as const, dimensions: 3, metric: 'manhattan', value: [1, 0, 0] },
+    {
+      elementType: 'binary' as const,
+      dimensions: 24,
+      metric: 'hamming',
+      value: new Uint8Array([0b1111_0000, 0, 0]),
+    },
+  ];
+
+  for (const testCase of distanceTestCases) {
+    if (!supportsDistanceMetric(testCase.metric, testCase.elementType)) {
+      continue;
+    }
+
+    it(`binds ${testCase.elementType} literal vectors for ${testCase.metric} distance`, async () => {
+      class VectorItem extends Model<
+        InferAttributes<VectorItem>,
+        InferCreationAttributes<VectorItem>
+      > {
+        declare id: CreationOptional<number>;
+        declare embedding: VectorValue;
+      }
+
+      VectorItem.init(
+        {
+          id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+          embedding: DataTypes.VECTOR({
+            dimensions: testCase.dimensions,
+            elementType: testCase.elementType,
+          }),
+        },
+        { sequelize, timestamps: false },
+      );
+      await VectorItem.sync({ force: true });
+      const item = await VectorItem.create({ embedding: testCase.value });
+
+      const nearest = await VectorItem.findOne({
+        order: [sql.vectorDistance(sql.attribute('embedding'), testCase.value, testCase.metric)],
+      });
+
+      expect(nearest?.id).to.equal(item.id);
+    });
+  }
+
+  if (supportsDistanceMetric('dot', 'float32')) {
+    it('treats dot as a distance with smaller values ranked first', async () => {
+      class VectorItem extends Model<
+        InferAttributes<VectorItem>,
+        InferCreationAttributes<VectorItem>
+      > {
+        declare id: CreationOptional<number>;
+        declare embedding: VectorValue;
+      }
+
+      VectorItem.init(
+        {
+          id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+          embedding: DataTypes.VECTOR(3),
+        },
+        { sequelize, timestamps: false },
+      );
+      await VectorItem.sync({ force: true });
+      const items = await VectorItem.bulkCreate([
+        { embedding: [1, 0, 0] },
+        { embedding: [-1, 0, 0] },
+      ]);
+
+      const nearest = await VectorItem.findAll({
+        order: [sql.vectorDistance(sql.attribute('embedding'), [1, 0, 0], 'dot')],
+      });
+
+      expect(nearest.map(item => item.id)).to.deep.equal([items[0].id, items[1].id]);
     });
   }
 
