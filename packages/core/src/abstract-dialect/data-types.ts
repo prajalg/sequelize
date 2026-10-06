@@ -3014,11 +3014,11 @@ export class VECTOR extends AbstractDataType<VectorValue> {
   parseDatabaseValue(value: unknown): VectorValue {
     this.validate(value);
 
-    if (this.options.elementType === 'binary') {
-      return value instanceof Uint8Array ? value : Uint8Array.from(value);
+    if (this.options.elementType === 'binary' || this.options.typedArray) {
+      return this.#toTypedArray(value);
     }
 
-    return this.options.typedArray ? this.#toTypedArray(value) : [...value];
+    return [...value];
   }
 
   areValuesEqual(value: VectorValue, originalValue: VectorValue): boolean {
