@@ -5,18 +5,34 @@ import { expectsql, sequelize } from '../../support';
 const queryGenerator = sequelize.queryGenerator;
 
 describe('sql.vectorDistance', () => {
-  it('renders Oracle vector distance SQL and rejects unsupported dialects', () => {
-    expectsql(
-      () =>
-        queryGenerator.escape(
-          sql.vectorDistance(sql.attribute('embedding'), sql.attribute('target'), 'cosine'),
-        ),
-      {
-        default: new Error('Function VectorDistance is not supported'),
-        oracle: 'VECTOR_DISTANCE("embedding", "target", COSINE)',
-      },
-    );
-  });
+  const metricSqlNames = {
+    cosine: 'COSINE',
+    euclidean: 'EUCLIDEAN',
+    euclideanSquared: 'EUCLIDEAN_SQUARED',
+    manhattan: 'MANHATTAN',
+    dot: 'DOT',
+    hamming: 'HAMMING',
+    jaccard: 'JACCARD',
+  } as const;
+
+  for (const [metric, metricSqlName] of Object.entries(metricSqlNames)) {
+    it(`formats the ${metric} metric for the selected dialect`, () => {
+      expectsql(
+        () =>
+          queryGenerator.escape(
+            sql.vectorDistance(
+              sql.attribute('embedding'),
+              sql.attribute('target'),
+              metric as keyof typeof metricSqlNames,
+            ),
+          ),
+        {
+          default: new Error('Function VectorDistance is not supported'),
+          oracle: `VECTOR_DISTANCE("embedding", "target", ${metricSqlName})`,
+        },
+      );
+    });
+  }
 
   it('requires the left operand to be a SQL expression', () => {
     expect(() => sql.vectorDistance('embedding' as never, [1, 2, 3], 'cosine')).to.throw(
@@ -30,90 +46,91 @@ describe('sql.vectorDistance', () => {
     ).to.throw('Invalid vector distance metric: angular');
   });
 
-  if (sequelize.dialect.supports.vectorDistance) {
-    it('maps every metric to its Oracle keyword', () => {
-      const expectedMetrics = {
-        cosine: 'COSINE',
-        euclidean: 'EUCLIDEAN',
-        euclideanSquared: 'EUCLIDEAN_SQUARED',
-        manhattan: 'MANHATTAN',
-        dot: 'DOT',
-        hamming: 'HAMMING',
-        jaccard: 'JACCARD',
-      } as const;
-
-      for (const [metric, oracleMetric] of Object.entries(expectedMetrics)) {
-        expect(
-          queryGenerator.escape(
-            sql.vectorDistance(
-              sql.attribute('embedding'),
-              sql.attribute('target'),
-              metric as keyof typeof expectedMetrics,
-            ),
-          ),
-        ).to.equal(`VECTOR_DISTANCE("embedding", "target", ${oracleMetric})`);
-      }
-    });
-
+  const vectorDistanceSupport = sequelize.dialect.supports.vectorDistance;
+  const vectorTypeSupport = sequelize.dialect.supports.dataTypes.VECTOR;
+  if (
+    vectorTypeSupport &&
+    vectorTypeSupport.elementTypes.float64 &&
+    vectorDistanceSupport &&
+    vectorDistanceSupport.metrics.includes('cosine')
+  ) {
     it('binds a literal vector through the attribute VECTOR type', () => {
-      const Document = sequelize.define(
-        'Document',
-        {
-          embedding: {
-            type: DataTypes.VECTOR({ dimensions: 3, elementType: 'float64' }),
-            columnName: 'embedding_vector',
-          },
-        },
-        { timestamps: false },
-      );
       let boundValue: unknown;
 
-      const result = queryGenerator.escape(
-        sql.vectorDistance(sql.attribute('embedding'), [1, 2, 3], 'cosine'),
-        {
-          model: Document,
-          bindParam(value) {
-            boundValue = value;
+      expectsql(
+        () => {
+          const Document = sequelize.define(
+            'Document',
+            {
+              embedding: {
+                type: DataTypes.VECTOR({ dimensions: 3, elementType: 'float64' }),
+                columnName: 'embedding_vector',
+              },
+            },
+            { timestamps: false },
+          );
 
-            return '$vector';
-          },
+          return queryGenerator.escape(
+            sql.vectorDistance(sql.attribute('embedding'), [1, 2, 3], 'cosine'),
+            {
+              model: Document,
+              bindParam(value) {
+                boundValue = value;
+
+                return '$vector';
+              },
+            },
+          );
+        },
+        {
+          default: new Error('Function VectorDistance is not supported'),
+          oracle: 'VECTOR_DISTANCE("embedding_vector", $vector, COSINE)',
         },
       );
 
-      expect(result).to.equal('VECTOR_DISTANCE("embedding_vector", $vector, COSINE)');
       expect(boundValue).to.deep.equal(Float64Array.from([1, 2, 3]));
     });
 
     it('escapes a literal vector through the attribute VECTOR type when binds are unavailable', () => {
-      const Document = sequelize.define(
-        'Document',
-        {
-          embedding: {
-            type: DataTypes.VECTOR({ dimensions: 3, elementType: 'float64' }),
-            columnName: 'embedding_vector',
-          },
+      expectsql(
+        () => {
+          const Document = sequelize.define(
+            'Document',
+            {
+              embedding: {
+                type: DataTypes.VECTOR({ dimensions: 3, elementType: 'float64' }),
+                columnName: 'embedding_vector',
+              },
+            },
+            { timestamps: false },
+          );
+
+          return queryGenerator.escape(
+            sql.vectorDistance(sql.attribute('embedding'), [1, 2, 3], 'cosine'),
+            { model: Document },
+          );
         },
-        { timestamps: false },
+        {
+          default: new Error('Function VectorDistance is not supported'),
+          oracle: 'VECTOR_DISTANCE("embedding_vector", VECTOR(\'[1,2,3]\', 3, FLOAT64), COSINE)',
+        },
       );
-
-      expect(
-        queryGenerator.escape(sql.vectorDistance(sql.attribute('embedding'), [1, 2, 3], 'cosine'), {
-          model: Document,
-        }),
-      ).to.equal('VECTOR_DISTANCE("embedding_vector", VECTOR(\'[1,2,3]\', 3, FLOAT64), COSINE)');
-    });
-
-    it('preserves ordinary sql.fn rendering', () => {
-      expect(
-        queryGenerator.escape(
-          sql.fn(
-            'VECTOR_DISTANCE',
-            sql.attribute('first'),
-            sql.attribute('second'),
-            sql.literal('COSINE'),
-          ),
-        ),
-      ).to.equal('VECTOR_DISTANCE("first", "second", COSINE)');
     });
   }
+
+  it('preserves ordinary sql.fn rendering', () => {
+    expectsql(
+      queryGenerator.escape(
+        sql.fn(
+          'VECTOR_DISTANCE',
+          sql.attribute('first'),
+          sql.attribute('second'),
+          sql.literal('COSINE'),
+        ),
+      ),
+      {
+        default: 'VECTOR_DISTANCE([first], [second], COSINE)',
+      },
+    );
+  });
 });
