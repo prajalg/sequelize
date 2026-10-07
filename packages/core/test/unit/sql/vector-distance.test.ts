@@ -84,6 +84,25 @@ describe('sql.vectorDistance', () => {
       expect(boundValue).to.deep.equal(Float64Array.from([1, 2, 3]));
     });
 
+    it('escapes a literal vector through the attribute VECTOR type when binds are unavailable', () => {
+      const Document = sequelize.define(
+        'Document',
+        {
+          embedding: {
+            type: DataTypes.VECTOR({ dimensions: 3, elementType: 'float64' }),
+            columnName: 'embedding_vector',
+          },
+        },
+        { timestamps: false },
+      );
+
+      expect(
+        queryGenerator.escape(sql.vectorDistance(sql.attribute('embedding'), [1, 2, 3], 'cosine'), {
+          model: Document,
+        }),
+      ).to.equal('VECTOR_DISTANCE("embedding_vector", VECTOR(\'[1,2,3]\', 3, FLOAT64), COSINE)');
+    });
+
     it('preserves ordinary sql.fn rendering', () => {
       expect(
         queryGenerator.escape(
