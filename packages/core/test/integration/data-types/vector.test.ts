@@ -2,6 +2,7 @@ import type {
   CreationOptional,
   InferAttributes,
   InferCreationAttributes,
+  VectorElementType,
   VectorValue,
 } from '@sequelize/core';
 import { DataTypes, Model } from '@sequelize/core';
@@ -12,7 +13,8 @@ import { beforeEach2, getTestDialectTeaser, sequelize } from '../support';
 const dialect = sequelize.dialect;
 
 describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
-  if (!dialect.supports.dataTypes.VECTOR) {
+  const vectorSupport = dialect.supports.dataTypes.VECTOR;
+  if (!vectorSupport) {
     return;
   }
 
@@ -26,139 +28,203 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
     });
   }
 
-  const vars = beforeEach2(async () => {
-    class VectorItem extends Model<
-      InferAttributes<VectorItem>,
-      InferCreationAttributes<VectorItem>
-    > {
-      declare id: CreationOptional<number>;
-      declare float32Embedding: VectorValue;
-      declare typedEmbedding: VectorValue;
-      declare float64Embedding: VectorValue;
-      declare int8Embedding: VectorValue;
-      declare binaryEmbedding: VectorValue;
-    }
+  const allVectorTestCases: ReadonlyArray<{
+    elementType: VectorElementType;
+    dimensions: number;
+    initialValue: VectorValue;
+    updatedValue: VectorValue;
+    typedValue: VectorValue;
+  }> = [
+    {
+      elementType: 'float16',
+      dimensions: 3,
+      initialValue: [1.25, 2.5, 3.75],
+      updatedValue: [4, 5, 6],
+      typedValue: new Float32Array([1.25, 2.5, 3.75]),
+    },
+    {
+      elementType: 'float32',
+      dimensions: 3,
+      initialValue: [1.25, 2.5, 3.75],
+      updatedValue: [4, 5, 6],
+      typedValue: new Float32Array([1.25, 2.5, 3.75]),
+    },
+    {
+      elementType: 'float64',
+      dimensions: 3,
+      initialValue: [Number.EPSILON, Math.PI, Math.E],
+      updatedValue: [4, 5, 6],
+      typedValue: new Float64Array([Number.EPSILON, Math.PI, Math.E]),
+    },
+    {
+      elementType: 'int8',
+      dimensions: 3,
+      initialValue: [-128, 0, 127],
+      updatedValue: [4, 5, 6],
+      typedValue: new Int8Array([-128, 0, 127]),
+    },
+    {
+      elementType: 'binary',
+      dimensions: 24,
+      initialValue: new Uint8Array([0b1010_1010, 0b0101_0101, 0b1111_0000]),
+      updatedValue: new Uint8Array([1, 2, 3]),
+      typedValue: new Uint8Array([0b1010_1010, 0b0101_0101, 0b1111_0000]),
+    },
+  ];
+  const vectorTestCases = allVectorTestCases.filter(
+    testCase => vectorSupport.elementTypes[testCase.elementType],
+  );
 
-    VectorItem.init(
-      {
-        id: {
-          type: DataTypes.INTEGER,
-          primaryKey: true,
-          autoIncrement: true,
+  for (const testCase of vectorTestCases) {
+    describe(`${testCase.elementType} vectors`, () => {
+      const vars = beforeEach2(async () => {
+        class VectorItem extends Model<
+          InferAttributes<VectorItem>,
+          InferCreationAttributes<VectorItem>
+        > {
+          declare id: CreationOptional<number>;
+          declare embedding: VectorValue;
+          declare typedEmbedding: VectorValue;
+        }
+
+        VectorItem.init(
+          {
+            id: {
+              type: DataTypes.INTEGER,
+              primaryKey: true,
+              autoIncrement: true,
+            },
+            embedding: {
+              type: DataTypes.VECTOR({
+                dimensions: testCase.dimensions,
+                elementType: testCase.elementType,
+              }),
+              columnName: 'embedding_value',
+            },
+            typedEmbedding: DataTypes.VECTOR({
+              dimensions: testCase.dimensions,
+              elementType: testCase.elementType,
+              typedArray: true,
+            }),
+          },
+          { sequelize, timestamps: false },
+        );
+
+        await VectorItem.sync({ force: true });
+
+        return { VectorItem };
+      });
+
+      it('round-trips plain and typed values', async () => {
+        const item = await vars.VectorItem.create({
+          embedding: testCase.initialValue,
+          typedEmbedding: testCase.initialValue,
+        });
+
+        await item.reload();
+
+        if (testCase.elementType === 'binary') {
+          expect(item.embedding).to.deep.equal(testCase.initialValue);
+        } else {
+          expect(item.embedding).to.deep.equal([...testCase.initialValue]);
+        }
+
+        expect(item.typedEmbedding).to.deep.equal(testCase.typedValue);
+      });
+
+      it('supports bulk inserts', async () => {
+        await vars.VectorItem.bulkCreate([
+          { embedding: testCase.initialValue, typedEmbedding: testCase.initialValue },
+          { embedding: testCase.updatedValue, typedEmbedding: testCase.updatedValue },
+        ]);
+
+        expect(await vars.VectorItem.count()).to.equal(2);
+      });
+
+      it('updates and reloads a vector value', async () => {
+        const item = await vars.VectorItem.create({
+          embedding: testCase.initialValue,
+          typedEmbedding: testCase.initialValue,
+        });
+
+        item.embedding = testCase.updatedValue;
+        await item.save();
+        await item.reload();
+
+        if (testCase.elementType === 'binary') {
+          expect(item.embedding).to.deep.equal(testCase.updatedValue);
+        } else {
+          expect(item.embedding).to.deep.equal([...testCase.updatedValue]);
+        }
+      });
+
+      it('does not mark equal vectors as changed across array kinds', async () => {
+        const item = await vars.VectorItem.create({
+          embedding: testCase.initialValue,
+          typedEmbedding: testCase.initialValue,
+        });
+
+        await item.reload();
+        item.embedding = testCase.typedValue;
+
+        expect(item.changed('embedding')).to.equal(false);
+      });
+    });
+  }
+
+  const largeVectorTestCase = vectorTestCases.find(
+    testCase =>
+      testCase.elementType !== 'binary' &&
+      vectorSupport.elementTypes[testCase.elementType]!.maxDimensions >= 1536,
+  );
+  if (largeVectorTestCase) {
+    it('round-trips a realistic 1536-dimension embedding', async () => {
+      class Document extends Model<InferAttributes<Document>, InferCreationAttributes<Document>> {
+        declare id: CreationOptional<number>;
+        declare embedding: VectorValue;
+      }
+
+      Document.init(
+        {
+          id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+          embedding: DataTypes.VECTOR({
+            dimensions: 1536,
+            elementType: largeVectorTestCase.elementType,
+          }),
         },
-        float32Embedding: DataTypes.VECTOR(3),
-        typedEmbedding: DataTypes.VECTOR({ dimensions: 3, typedArray: true }),
-        float64Embedding: DataTypes.VECTOR({ dimensions: 3, elementType: 'float64' }),
-        int8Embedding: DataTypes.VECTOR({ dimensions: 3, elementType: 'int8' }),
-        binaryEmbedding: DataTypes.VECTOR({ dimensions: 24, elementType: 'binary' }),
-      },
-      { sequelize, timestamps: false },
-    );
+        { sequelize, timestamps: false },
+      );
+      await Document.sync({ force: true });
 
-    await VectorItem.sync({ force: true });
+      const embedding = Array.from({ length: 1536 }, (_, index) => index / 1536);
+      const document = await Document.create({ embedding });
+      await document.reload();
 
-    return { VectorItem };
-  });
-
-  it('round-trips plain arrays for each numeric element type', async () => {
-    const item = await vars.VectorItem.create({
-      float32Embedding: [1.25, 2.5, 3.75],
-      typedEmbedding: [4, 5, 6],
-      float64Embedding: [Number.EPSILON, Math.PI, Math.E],
-      int8Embedding: [-128, 0, 127],
-      binaryEmbedding: new Uint8Array([0b1010_1010, 0b0101_0101, 0b1111_0000]),
+      expect(document.embedding).to.have.length(1536);
+      expect(document.embedding[1024]).to.be.closeTo(embedding[1024], 1e-6);
     });
+  }
 
-    await item.reload();
+  const defaultVectorTestCase = vectorTestCases[0];
+  if (defaultVectorTestCase) {
+    it('allows sync({ alter: true }) when the VECTOR definition is unchanged', async () => {
+      class VectorItem extends Model {}
 
-    expect(item.float32Embedding).to.be.an('array');
-    expect(item.float32Embedding).to.deep.equal([1.25, 2.5, 3.75]);
-    expect(item.float64Embedding).to.be.an('array');
-    expect(item.float64Embedding).to.deep.equal([Number.EPSILON, Math.PI, Math.E]);
-    expect(item.int8Embedding).to.deep.equal([-128, 0, 127]);
-    expect(item.typedEmbedding).to.be.instanceOf(Float32Array);
-    expect(item.binaryEmbedding).to.be.instanceOf(Uint8Array);
-    expect([...item.binaryEmbedding]).to.deep.equal([0b1010_1010, 0b0101_0101, 0b1111_0000]);
-  });
+      VectorItem.init(
+        {
+          id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+          embedding: DataTypes.VECTOR({
+            dimensions: defaultVectorTestCase.dimensions,
+            elementType: defaultVectorTestCase.elementType,
+          }),
+        },
+        { sequelize, timestamps: false },
+      );
+      await VectorItem.sync({ force: true });
 
-  it('supports bulk inserts with plain vectors', async () => {
-    await vars.VectorItem.bulkCreate([
-      {
-        float32Embedding: [1, 2, 3],
-        typedEmbedding: [1, 2, 3],
-        float64Embedding: [1, 2, 3],
-        int8Embedding: [1, 2, 3],
-        binaryEmbedding: new Uint8Array([1, 2, 3]),
-      },
-      {
-        float32Embedding: [4, 5, 6],
-        typedEmbedding: [4, 5, 6],
-        float64Embedding: [4, 5, 6],
-        int8Embedding: [4, 5, 6],
-        binaryEmbedding: new Uint8Array([4, 5, 6]),
-      },
-    ]);
-
-    expect(await vars.VectorItem.count()).to.equal(2);
-  });
-
-  it('updates and reloads a vector value', async () => {
-    const item = await vars.VectorItem.create({
-      float32Embedding: [1, 2, 3],
-      typedEmbedding: [1, 2, 3],
-      float64Embedding: [1, 2, 3],
-      int8Embedding: [1, 2, 3],
-      binaryEmbedding: new Uint8Array([1, 2, 3]),
+      await expect(VectorItem.sync({ alter: true })).to.be.fulfilled;
     });
-
-    item.float32Embedding = [4, 5, 6];
-    await item.save();
-    await item.reload();
-
-    expect(item.float32Embedding).to.deep.equal([4, 5, 6]);
-  });
-
-  it('does not mark equal vectors as changed across array kinds', async () => {
-    const item = await vars.VectorItem.create({
-      float32Embedding: [1, 2, 3],
-      typedEmbedding: [1, 2, 3],
-      float64Embedding: [1, 2, 3],
-      int8Embedding: [1, 2, 3],
-      binaryEmbedding: new Uint8Array([1, 2, 3]),
-    });
-
-    await item.reload();
-    item.float32Embedding = new Float32Array([1, 2, 3]);
-
-    expect(item.changed('float32Embedding')).to.equal(false);
-  });
-
-  it('round-trips a realistic 1536-dimension embedding', async () => {
-    class Document extends Model<InferAttributes<Document>, InferCreationAttributes<Document>> {
-      declare id: CreationOptional<number>;
-      declare embedding: VectorValue;
-    }
-
-    Document.init(
-      {
-        id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-        embedding: DataTypes.VECTOR(1536),
-      },
-      { sequelize, timestamps: false },
-    );
-    await Document.sync({ force: true });
-
-    const embedding = Array.from({ length: 1536 }, (_, index) => index / 1536);
-    const document = await Document.create({ embedding });
-    await document.reload();
-
-    expect(document.embedding).to.have.length(1536);
-    expect(document.embedding[1024]).to.be.closeTo(embedding[1024], 1e-6);
-  });
-
-  it('allows sync({ alter: true }) when the VECTOR definition is unchanged', async () => {
-    await expect(vars.VectorItem.sync({ alter: true })).to.be.fulfilled;
-  });
+  }
 
   if (dialect.name === 'oracle') {
     it('rejects changing an existing VECTOR definition through sync({ alter: true })', async () => {
@@ -189,7 +255,7 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
     });
   }
 
-  if (dialect.supports.dataTypes.VECTOR.optionalDimensions) {
+  if (vectorSupport.optionalDimensions) {
     it('round-trips a vector without fixed dimensions', async () => {
       class FlexibleVectorItem extends Model<
         InferAttributes<FlexibleVectorItem>,
