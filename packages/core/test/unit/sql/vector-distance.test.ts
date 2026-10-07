@@ -116,6 +116,34 @@ describe('sql.vectorDistance', () => {
         },
       );
     });
+
+    it('resolves a mapped associated VECTOR attribute', () => {
+      const Collection = sequelize.define('Collection', {}, { timestamps: false });
+      const Item = sequelize.define(
+        'Item',
+        {
+          embedding: {
+            type: DataTypes.VECTOR({ dimensions: 3, elementType: 'float64' }),
+            columnName: 'embedding_vector',
+          },
+        },
+        { timestamps: false },
+      );
+      Collection.hasMany(Item, { as: 'items', foreignKey: 'collectionId' });
+
+      expectsql(
+        () =>
+          queryGenerator.escape(
+            sql.vectorDistance(sql.attribute('$items.embedding$'), [1, 2, 3], 'cosine'),
+            { model: Collection },
+          ),
+        {
+          default: new Error('Function VectorDistance is not supported'),
+          oracle:
+            'VECTOR_DISTANCE("items"."embedding_vector", VECTOR(\'[1,2,3]\', 3, FLOAT64), COSINE)',
+        },
+      );
+    });
   }
 
   it('preserves ordinary sql.fn rendering', () => {
