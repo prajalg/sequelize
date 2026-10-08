@@ -583,18 +583,6 @@ export class AbstractQueryInterface extends AbstractQueryInterfaceTypeScript {
     return await this.sequelize.queryRaw(query, options);
   }
 
-  async select(model, tableName, optionsArg) {
-    const minifyAliases = optionsArg.minifyAliases ?? this.sequelize.options.minifyAliases;
-    const options = { ...optionsArg, type: QueryTypes.SELECT, model, minifyAliases };
-
-    const sql = this.queryGenerator.selectQuery(tableName, options, model);
-
-    // unlike bind, replacements are handled by QueryGenerator, not QueryRaw
-    delete options.replacements;
-
-    return await this.sequelize.queryRaw(sql, options);
-  }
-
   async increment(
     model,
     tableName,

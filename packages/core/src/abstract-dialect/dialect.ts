@@ -2,6 +2,7 @@ import { EMPTY_OBJECT, freezeDeep, getImmutablePojo, isFunction, isString } from
 import cloneDeep from 'lodash/cloneDeep';
 import merge from 'lodash/merge';
 import type { Class } from 'type-fest';
+import type { VectorMetric } from '../expression-builders/vector-distance.js';
 import type { Sequelize } from '../sequelize.js';
 import { logger } from '../utils/logger.js';
 import type { DeepPartial } from '../utils/types.js';
@@ -224,6 +225,11 @@ export type DialectSupports = {
       precision: boolean;
     };
   };
+  vectorDistance:
+    | false
+    | {
+        metrics: readonly VectorMetric[];
+      };
   REGEXP: boolean;
   /**
    * Case-insensitive regexp operator support ('~*' in postgres).
@@ -480,6 +486,7 @@ export abstract class AbstractDialect<
         precision: true,
       },
     },
+    vectorDistance: false,
     jsonOperations: false,
     jsonExtraction: {
       unquoted: false,
