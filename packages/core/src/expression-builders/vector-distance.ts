@@ -57,12 +57,23 @@ export class VectorDistance extends DialectAwareFn {
     return 2;
   }
 
+  /**
+   * Returns whether the dialect supports this vector-distance metric.
+   *
+   * @param dialect The dialect to check.
+   */
   supportsDialect(dialect: AbstractDialect): boolean {
     const support = dialect.supports.vectorDistance;
 
     return support !== false && support.metrics.includes(this.metric);
   }
 
+  /**
+   * Renders this vector-distance expression for the selected dialect.
+   *
+   * @param dialect The dialect that renders the expression.
+   * @param options Options used while escaping the expression.
+   */
   applyForDialect(dialect: AbstractDialect, options?: EscapeOptions): string {
     const left = this.args[0];
     const right = this.args[1];
@@ -87,6 +98,13 @@ export class VectorDistance extends DialectAwareFn {
   }
 }
 
+/**
+ * Builds a vector-distance SQL expression.
+ *
+ * @param left The vector column or SQL expression to search.
+ * @param right A vector column, SQL expression, or literal query vector.
+ * @param metric The distance metric to calculate.
+ */
 export function vectorDistance(
   left: BaseSqlExpression,
   right: BaseSqlExpression | VectorValue,
