@@ -34,6 +34,7 @@ import {
 import { EMPTY_SET } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/object.js';
 import { defaultValueSchemable } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/query-builder-utils.js';
 import { generateIndexName } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/string.js';
+import semver from 'semver';
 import type { OracleDialect } from './dialect.js';
 import { OracleQueryGeneratorInternal } from './query-generator.internal.js';
 
@@ -54,8 +55,15 @@ export class OracleQueryGeneratorTypeScript extends AbstractQueryGenerator {
     const currTableName = this.getCatalogName(table.tableName);
     const schema = this.getCatalogName(table.schema);
 
+    const databaseVersion = this.sequelize.getDatabaseVersionIfExist();
+    const parsedDatabaseVersion = databaseVersion ? semver.coerce(databaseVersion) : null;
+    const vectorInfoColumn =
+      parsedDatabaseVersion && semver.gte(parsedDatabaseVersion, '23.4.0')
+        ? ', atc.VECTOR_INFO'
+        : '';
+
     return [
-      'SELECT atc.COLUMN_NAME, atc.DATA_TYPE, atc.DATA_LENGTH, atc.CHAR_LENGTH, atc.DEFAULT_LENGTH, atc.NULLABLE, ucc.constraint_type ',
+      `SELECT atc.COLUMN_NAME, atc.DATA_TYPE, atc.DATA_LENGTH, atc.CHAR_LENGTH, atc.DEFAULT_LENGTH, atc.NULLABLE${vectorInfoColumn}, ucc.constraint_type `,
       'FROM all_tab_columns atc ',
       'LEFT OUTER JOIN ',
       '(SELECT acc.column_name, acc.table_name, ac.constraint_type FROM all_cons_columns acc INNER JOIN all_constraints ac ON acc.constraint_name = ac.constraint_name) ucc ',
