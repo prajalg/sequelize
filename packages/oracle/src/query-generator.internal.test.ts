@@ -1,16 +1,10 @@
-import { DataTypes, Sequelize, sql } from '@sequelize/core';
+import { DataTypes, Sequelize } from '@sequelize/core';
 import { OracleDialect } from '@sequelize/oracle';
 import { expect } from 'chai';
 
 describe('Oracle query generator internals', () => {
   const sequelize = new Sequelize({ dialect: OracleDialect });
   const queryGenerator = sequelize.queryGenerator;
-
-  it('renders VECTOR casts', () => {
-    const expression = sql.cast(sql.attribute('embedding'), DataTypes.VECTOR(3));
-
-    expect(queryGenerator.escape(expression)).to.equal('CAST("embedding" AS VECTOR(3, FLOAT32))');
-  });
 
   it('uses Oracle VECTOR bindings in insert and update queries', () => {
     const attributes = {

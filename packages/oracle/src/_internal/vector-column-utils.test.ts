@@ -1,4 +1,5 @@
-import { DataTypes } from '@sequelize/core';
+import { DataTypes, Sequelize } from '@sequelize/core';
+import { OracleDialect } from '@sequelize/oracle';
 import { expect } from 'chai';
 import { getOracleColumnType, shouldSkipOracleVectorColumnChange } from './vector-column-utils';
 
@@ -28,7 +29,8 @@ describe('Oracle VECTOR column utilities', () => {
   });
 
   describe('shouldSkipOracleVectorColumnChange', () => {
-    const vector = DataTypes.VECTOR(3);
+    const sequelize = new Sequelize({ dialect: OracleDialect });
+    const vector = sequelize.normalizeDataType(DataTypes.VECTOR(3));
     const makeQueryInterface = (type: string) => ({
       normalizeAttribute: () => ({ type: vector, field: 'embedding_vector' }),
       describeTable: async () => ({ embedding_vector: { type } }),

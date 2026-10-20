@@ -430,11 +430,11 @@ export class DATEONLY extends BaseTypes.DATEONLY {
  * Oracle VECTOR requires Oracle Database 23.4 or newer.
  */
 export class VECTOR extends BaseTypes.VECTOR {
-  protected override _getSqlOptionParts(): string[] {
-    return [
-      this.options.dimensions === undefined ? '*' : String(this.options.dimensions),
-      this.options.elementType.toUpperCase(),
-    ];
+  override toSql(): string {
+    const dimensions = this.options.dimensions ?? '*';
+    const elementType = this.options.elementType.toUpperCase();
+
+    return `VECTOR(${dimensions}, ${elementType})`;
   }
 
   /**

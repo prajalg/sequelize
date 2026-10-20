@@ -1,8 +1,8 @@
 import type { DataTypeInstance, VectorElementType, VectorValue } from '@sequelize/core';
-import { DataTypes, ValidationErrorItem } from '@sequelize/core';
+import { DataTypes, ValidationErrorItem, sql } from '@sequelize/core';
 import * as BaseTypes from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/data-types.js';
 import { expect } from 'chai';
-import { sequelize } from '../../support';
+import { expectsql, sequelize } from '../../support';
 import { testDataTypeSql } from './_utils';
 
 const dialect = sequelize.dialect;
@@ -167,6 +167,12 @@ describe('DataTypes.VECTOR', () => {
   });
 
   describe('toSql', () => {
+    it('requires dialect-specific SQL rendering', () => {
+      expect(() => DataTypes.VECTOR(3).toSql()).to.throw(
+        'VECTOR SQL rendering must be implemented by the dialect.',
+      );
+    });
+
     testDataTypeSql('VECTOR', DataTypes.VECTOR, {
       default: new Error(`${dialectName} does not support the VECTOR data type.
 See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
@@ -215,6 +221,19 @@ See https://sequelize.org/docs/v7/models/data-types/ for a list of supported dat
 See https://sequelize.org/docs/v7/models/data-types/ for a list of supported data types.`),
       oracle: new Error('oracle supports at most 65535 dimensions for VECTOR element type float32'),
     });
+
+    it('renders VECTOR casts for the selected dialect', () => {
+      expectsql(
+        () =>
+          sequelize.queryGenerator.escape(
+            sql.cast(sql.attribute('embedding'), DataTypes.VECTOR(3)),
+          ),
+        {
+          default: new Error(`${dialectName} does not support the VECTOR data type`),
+          oracle: 'CAST("embedding" AS VECTOR(3, FLOAT32))',
+        },
+      );
+    });
   });
 
   describe('validate', () => {
@@ -241,6 +260,22 @@ See https://sequelize.org/docs/v7/models/data-types/ for a list of supported dat
         'not a valid vector element',
       );
       expect(() => type.validate([1, 2])).to.throw(ValidationErrorItem, 'but 3 were expected');
+    });
+
+    it('rejects non-numeric elements and unsupported typed arrays', () => {
+      const type = DataTypes.VECTOR(3);
+
+      for (const value of [
+        ['a', {}, 3],
+        [1, Number.POSITIVE_INFINITY, 3],
+        new Int16Array([1, 2, 3]),
+        new Uint16Array([1, 2, 3]),
+        new Int32Array([1, 2, 3]),
+        new Uint32Array([1, 2, 3]),
+        new Uint8ClampedArray([1, 2, 3]),
+      ]) {
+        expect(() => type.validate(value)).to.throw(ValidationErrorItem);
+      }
     });
 
     it('requires typed arrays to match the element type', () => {

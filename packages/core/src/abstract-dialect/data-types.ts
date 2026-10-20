@@ -3057,15 +3057,8 @@ export class VECTOR extends AbstractDataType<VectorValue> {
     }
   }
 
-  protected _getSqlOptionParts(): string[] {
-    return [
-      ...(this.options.dimensions === undefined ? [] : [String(this.options.dimensions)]),
-      this.options.elementType.toUpperCase(),
-    ];
-  }
-
   toSql(): string {
-    return `VECTOR(${this._getSqlOptionParts().join(', ')})`;
+    throw new Error('VECTOR SQL rendering must be implemented by the dialect.');
   }
 
   #validateElementType(elementType: string): asserts elementType is VectorElementType {
