@@ -19,6 +19,7 @@ import { JsonPath } from '../expression-builders/json-path.js';
 import { List } from '../expression-builders/list.js';
 import { Literal } from '../expression-builders/literal.js';
 import { Value } from '../expression-builders/value.js';
+import type { VectorMetric } from '../expression-builders/vector-distance.js';
 import { Where } from '../expression-builders/where.js';
 import type { ModelDefinition } from '../model-definition.js';
 import type { Attributes, Model, ModelStatic } from '../model.js';
@@ -152,6 +153,9 @@ export interface EscapeOptions extends FormatWhereOptions {
 }
 
 export interface FormatWhereOptions extends Partial<BindParamOptions>, ParameterOptions {
+  /** @internal */
+  readonly vectorBindParam?: BindParamOptions['bindParam'] | undefined;
+
   /**
    * The model of the main alias. Used to determine the type & column name of attributes referenced in the where clause.
    */
@@ -829,6 +833,14 @@ export class AbstractQueryGeneratorTypeScript<Dialect extends AbstractDialect = 
     }
 
     throw new Error(`formatUnquoteJson has not been implemented in ${this.dialect.name}.`);
+  }
+
+  formatVectorDistance(_left: string, _right: string, _metric: VectorMetric): string {
+    if (!this.dialect.supports.vectorDistance) {
+      throw new Error(`Vector distance is not supported by ${this.dialect.name}.`);
+    }
+
+    throw new Error(`formatVectorDistance has not been implemented in ${this.dialect.name}.`);
   }
 
   /**

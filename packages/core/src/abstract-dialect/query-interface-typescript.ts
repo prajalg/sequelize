@@ -1,4 +1,4 @@
-import { isNotNullish } from '@sequelize/utils';
+import { isNotNullish, pojo } from '@sequelize/utils';
 import isEmpty from 'lodash/isEmpty';
 import assert from 'node:assert';
 import type { ConstraintChecking } from '../deferrable';
@@ -6,6 +6,7 @@ import { Deferrable } from '../deferrable';
 import { QueryTypes } from '../enums';
 import { BaseError } from '../errors';
 import { setTransactionFromCls } from '../model-internals.js';
+import type { ModelStatic } from '../model.js';
 import type { QueryRawOptions, QueryRawOptionsWithType, Sequelize } from '../sequelize';
 import { COMPLETES_TRANSACTION, Transaction } from '../transaction';
 import { isErrorWithStringCode } from '../utils/check.js';
@@ -15,11 +16,12 @@ import {
   showAllToListSchemas,
   showAllToListTables,
 } from '../utils/deprecations';
+import { assertNoReservedBind, combineBinds, createBindParamGenerator } from '../utils/sql.js';
 import type { AbstractConnection } from './connection-manager.js';
 import type { AbstractDialect } from './dialect.js';
 import type { TableOrModel } from './query-generator.types.js';
 import { AbstractQueryInterfaceInternal } from './query-interface-internal.js';
-import type { TableNameWithSchema } from './query-interface.js';
+import type { QiSelectOptions, TableName, TableNameWithSchema } from './query-interface.js';
 import type {
   AddConstraintOptions,
   ColumnsDescription,
@@ -80,6 +82,38 @@ export class AbstractQueryInterfaceTypeScript<Dialect extends AbstractDialect = 
 
   get queryGenerator(): Dialect['queryGenerator'] {
     return this.dialect.queryGenerator;
+  }
+
+  async select(
+    model: ModelStatic | null,
+    tableName: TableName,
+    optionsArg: QiSelectOptions = {},
+  ): Promise<object[]> {
+    if (optionsArg.bind) {
+      assertNoReservedBind(optionsArg.bind);
+    }
+
+    const generatedBind = pojo<Record<string, unknown>>();
+    const minifyAliases = optionsArg.minifyAliases ?? this.sequelize.options.minifyAliases;
+    const options = {
+      ...optionsArg,
+      type: QueryTypes.SELECT,
+      ...(model ? { model } : {}),
+      ...(minifyAliases === undefined ? {} : { minifyAliases }),
+      vectorBindParam: createBindParamGenerator(generatedBind),
+    };
+    const sql = this.queryGenerator.selectQuery(tableName, options as never, model ?? undefined);
+    const {
+      replacements: ignoreReplacements,
+      vectorBindParam: ignoreVectorBindParam,
+      ...queryOptions
+    } = options;
+
+    if (!isEmpty(generatedBind)) {
+      queryOptions.bind = combineBinds(queryOptions.bind ?? pojo(), generatedBind);
+    }
+
+    return this.sequelize.queryRaw(sql, queryOptions as QueryRawOptionsWithType<QueryTypes.SELECT>);
   }
 
   /**

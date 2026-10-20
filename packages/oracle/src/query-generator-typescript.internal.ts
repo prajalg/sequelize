@@ -10,6 +10,7 @@ import type {
   ShowConstraintsQueryOptions,
   TableOrModel,
   TruncateTableQueryOptions,
+  VectorMetric,
 } from '@sequelize/core';
 import { AbstractQueryGenerator, DataTypes, IsolationLevel } from '@sequelize/core';
 import {
@@ -48,6 +49,20 @@ export class OracleQueryGeneratorTypeScript extends AbstractQueryGenerator {
     super(dialect, internals);
 
     this.#internals = internals;
+  }
+
+  formatVectorDistance(left: string, right: string, metric: VectorMetric): string {
+    const oracleMetric: Record<VectorMetric, string> = {
+      cosine: 'COSINE',
+      euclidean: 'EUCLIDEAN',
+      euclideanSquared: 'EUCLIDEAN_SQUARED',
+      manhattan: 'MANHATTAN',
+      dot: 'DOT',
+      hamming: 'HAMMING',
+      jaccard: 'JACCARD',
+    };
+
+    return `VECTOR_DISTANCE(${left}, ${right}, ${oracleMetric[metric]})`;
   }
 
   describeTableQuery(tableName: TableOrModel) {
