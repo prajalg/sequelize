@@ -17,10 +17,10 @@ describe('Oracle VECTOR column utilities', () => {
       ).to.equal('VECTOR(768, FLOAT32)');
     });
 
-    it('preserves sparse storage metadata so it cannot match a dense VECTOR definition', () => {
+    it('preserves unrecognized VECTOR metadata instead of treating it as a dense definition', () => {
       expect(
-        getOracleColumnType({ DATA_TYPE: 'VECTOR', VECTOR_INFO: 'VECTOR(768,float32,SPARSE)' }),
-      ).to.equal('VECTOR(768, FLOAT32) SPARSE');
+        getOracleColumnType({ DATA_TYPE: 'VECTOR', VECTOR_INFO: 'VECTOR(768,float32,OTHER)' }),
+      ).to.equal('VECTOR(768,FLOAT32,OTHER)');
     });
 
     it('leaves non-VECTOR column types unchanged', () => {

@@ -37,17 +37,14 @@ export function getOracleColumnType(row: OracleDescribeRow): string {
     return dataType;
   }
 
-  const vectorInfo = /^VECTOR\(\s*([^,]+)\s*,\s*([^\s,)]+)(?:\s*,\s*(DENSE|SPARSE))?\s*\)$/i.exec(
+  const vectorInfo = /^VECTOR\(\s*([^,]+)\s*,\s*([^\s,)]+)(?:\s*,\s*DENSE)?\s*\)$/i.exec(
     row.VECTOR_INFO,
   );
   if (!vectorInfo) {
     return row.VECTOR_INFO.toUpperCase();
   }
 
-  const storage = vectorInfo[3]?.toUpperCase();
-  const normalizedType = `VECTOR(${vectorInfo[1].toUpperCase()}, ${vectorInfo[2].toUpperCase()})`;
-
-  return storage === 'SPARSE' ? `${normalizedType} SPARSE` : normalizedType;
+  return `VECTOR(${vectorInfo[1].toUpperCase()}, ${vectorInfo[2].toUpperCase()})`;
 }
 
 /**
