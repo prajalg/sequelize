@@ -6,6 +6,27 @@ import { sequelize } from '../../support';
 const dialect = sequelize.dialect;
 
 describe('Model#sync', () => {
+  it('validates column definitions before force sync can drop a table', async () => {
+    const Item = sequelize.define('SyncValidatedItem', {
+      id: { type: DataTypes.INTEGER, primaryKey: true },
+    });
+    const validation = sinon
+      .stub(sequelize.queryGenerator, '_validateAttributes')
+      .throws(new Error('Unsupported column options'));
+    const query = sinon.stub(sequelize, 'queryRaw').resolves([[], 0]);
+
+    try {
+      await expect(Item.sync({ force: true, hooks: false })).to.be.rejectedWith(
+        'Unsupported column options',
+      );
+      expect(validation).to.have.been.calledOnce;
+      expect(query).not.to.have.been.called;
+    } finally {
+      validation.restore();
+      query.restore();
+    }
+  });
+
   if (!dialect.supports.schemas) {
     return;
   }

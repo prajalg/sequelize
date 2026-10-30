@@ -1034,6 +1034,14 @@ export class AbstractQueryGeneratorTypeScript<Dialect extends AbstractDialect = 
    */
 
   /**
+   * Validates column definitions before schema synchronization can make changes.
+   *
+   * @hidden
+   * @param _columns The column definitions to validate.
+   */
+  _validateAttributes(_columns: AttributesToSqlColumns): void {}
+
+  /**
    * Generates the SQL fragment that declares a single column, without its name.
    *
    * Every dialect implements this. It lives here because {@link attributesToSql} calls it.

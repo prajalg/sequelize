@@ -21,8 +21,10 @@ import {
   normalizeAttributeToSqlColumn,
 } from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/query-generator-typescript.js';
 import type {
+  AttributeToSqlColumn,
   AttributeToSqlInput,
   AttributeToSqlOptions,
+  AttributesToSqlColumns,
 } from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/query-generator.internal-types.js';
 import type { TableNameWithSchema } from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/query-interface.js';
 import { rejectInvalidOptions } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/check.js';
@@ -48,6 +50,47 @@ export class OracleQueryGeneratorTypeScript extends AbstractQueryGenerator {
     super(dialect, internals);
 
     this.#internals = internals;
+  }
+
+  override _validateAttributes(columns: AttributesToSqlColumns): void {
+    for (const [attributeName, column] of Object.entries(columns)) {
+      const attribute = normalizeAttributeToSqlColumn(column);
+      this.#validateVectorColumnOptions(
+        attribute,
+        attribute.field ?? attribute.columnName ?? attributeName,
+      );
+    }
+  }
+
+  /**
+   * Rejects schema options unsupported by Oracle VECTOR.
+   *
+   * @see https://docs.oracle.com/en/database/oracle/oracle-database/26/vecse/create-tables-using-vector-data-type.html
+   * @param attribute The column definition.
+   * @param columnName The physical column name used in error messages.
+   */
+  #validateVectorColumnOptions(attribute: AttributeToSqlColumn, columnName: string): void {
+    if (!(attribute.type instanceof DataTypes.VECTOR)) {
+      return;
+    }
+
+    if (defaultValueSchemable(attribute.defaultValue, this.dialect)) {
+      throw new Error(`Oracle VECTOR column ${columnName} does not support database defaults.`);
+    }
+
+    if (attribute.primaryKey) {
+      throw new Error(`Oracle VECTOR column ${columnName} cannot be used as a primary key.`);
+    }
+
+    if (attribute.references) {
+      throw new Error(`Oracle VECTOR column ${columnName} cannot be used as a foreign key.`);
+    }
+
+    // Oracle identity columns require a numeric SQL type:
+    // https://docs.oracle.com/en/database/oracle/oracle-database/26/sqlrf/CREATE-TABLE.html
+    if (attribute.autoIncrement) {
+      throw new Error(`Oracle VECTOR column ${columnName} does not support autoIncrement.`);
+    }
   }
 
   describeTableQuery(tableName: TableOrModel) {
@@ -427,6 +470,10 @@ export class OracleQueryGeneratorTypeScript extends AbstractQueryGenerator {
 
   attributeToSql(column: AttributeToSqlInput, options?: AttributeToSqlOptions): string {
     const attribute = normalizeAttributeToSqlColumn(column);
+    this.#validateVectorColumnOptions(
+      attribute,
+      attribute.field ?? attribute.columnName ?? '(unnamed)',
+    );
 
     // handle self referential constraints
     const model = attribute.Model;

@@ -8,6 +8,10 @@ import { shouldSkipOracleVectorColumnChange } from './_internal/vector-column-ut
 
 export class OracleQueryInterface extends AbstractQueryInterface {
   async changeColumn(tableName, attributeName, dataTypeOrOptions, options) {
+    this.queryGenerator._validateAttributes({
+      [attributeName]: this.normalizeAttribute(dataTypeOrOptions),
+    });
+
     if (
       await shouldSkipOracleVectorColumnChange(
         this,

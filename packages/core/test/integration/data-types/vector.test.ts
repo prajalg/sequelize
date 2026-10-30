@@ -227,6 +227,48 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
   }
 
   if (dialect.name === 'oracle') {
+    for (const allowNull of [true, false]) {
+      it(`preserves VECTOR nullability when sync({ alter: true }) rejects changing allowNull from ${allowNull} to ${!allowNull}`, async () => {
+        class OriginalVectorItem extends Model {}
+
+        OriginalVectorItem.init(
+          {
+            id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+            embedding: { type: DataTypes.VECTOR(3), allowNull },
+          },
+          { sequelize, tableName: 'vector_nullability_items', timestamps: false },
+        );
+        await OriginalVectorItem.sync({ force: true });
+        const item = await OriginalVectorItem.create({ embedding: [1, 2, 3] });
+
+        // Keeping the same nullability must not issue an unsupported VECTOR modification.
+        await expect(OriginalVectorItem.sync({ alter: true })).to.be.fulfilled;
+
+        class ChangedVectorItem extends Model {}
+
+        ChangedVectorItem.init(
+          {
+            id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+            embedding: { type: DataTypes.VECTOR(3), allowNull: !allowNull },
+          },
+          { sequelize, tableName: 'vector_nullability_items', timestamps: false },
+        );
+
+        await expect(ChangedVectorItem.sync({ alter: true })).to.be.rejectedWith(
+          'Changing nullability of Oracle VECTOR column embedding is not supported by sync({ alter: true }). Use an explicit migration.',
+        );
+
+        // Rejection must leave both the column definition and its stored value intact.
+        const description = await sequelize.queryInterface.describeTable(
+          'vector_nullability_items',
+        );
+        expect(description.embedding.allowNull).to.equal(allowNull);
+        expect(description.embedding.type).to.equal('VECTOR(3, FLOAT32)');
+        await item.reload();
+        expect(item.get('embedding')).to.deep.equal([1, 2, 3]);
+      });
+    }
+
     it('rejects changing an existing VECTOR definition through sync({ alter: true })', async () => {
       class OriginalVectorItem extends Model {}
 
