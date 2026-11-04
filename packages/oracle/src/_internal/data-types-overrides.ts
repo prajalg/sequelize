@@ -437,6 +437,14 @@ export class VECTOR extends BaseTypes.VECTOR {
     return `VECTOR(${dimensions}, ${elementType})`;
   }
 
+  escape(value: BaseTypes.VectorValue): string {
+    const vector = this._getDialect().escapeString(globalThis.JSON.stringify([...value]));
+    const dimensions = this.options.dimensions ?? '*';
+    const elementType = this.options.elementType.toUpperCase();
+
+    return `VECTOR(${vector}, ${dimensions}, ${elementType})`;
+  }
+
   /**
    * Converts plain arrays to the typed arrays expected by node-oracledb.
    *

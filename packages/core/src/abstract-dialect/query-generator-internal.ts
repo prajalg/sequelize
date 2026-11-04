@@ -239,7 +239,13 @@ export class AbstractQueryGeneratorInternal<Dialect extends AbstractDialect = Ab
   }
 
   formatAssociationPath(associationPath: AssociationPath, options?: EscapeOptions): string {
-    return `${this.quoteTableAlias(associationPath.associationPath.join('->'), options)}.${this.queryGenerator.quoteIdentifier(associationPath.attributeName)}`;
+    const modelDefinition = options?.model ? extractModelDefinition(options.model) : null;
+    const association = modelDefinition?.getAssociation(associationPath.associationPath);
+    const columnName =
+      association?.target.modelDefinition.getColumnNameLoose(associationPath.attributeName) ??
+      associationPath.attributeName;
+
+    return `${this.quoteTableAlias(associationPath.associationPath.join('->'), options)}.${this.queryGenerator.quoteIdentifier(columnName)}`;
   }
 
   getTableAlias(alias: string, options?: TableAliasOptions): string {
