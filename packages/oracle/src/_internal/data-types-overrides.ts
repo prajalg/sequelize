@@ -439,8 +439,10 @@ export class VECTOR extends BaseTypes.VECTOR {
 
   escape(value: BaseTypes.VectorValue): string {
     const vector = this._getDialect().escapeString(globalThis.JSON.stringify([...value]));
+    const dimensions = this.options.dimensions ?? '*';
+    const elementType = this.options.elementType.toUpperCase();
 
-    return `VECTOR(${vector}, ${this._getSqlOptionParts().join(', ')})`;
+    return `VECTOR(${vector}, ${dimensions}, ${elementType})`;
   }
 
   /**
