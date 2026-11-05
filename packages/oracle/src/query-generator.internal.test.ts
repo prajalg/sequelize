@@ -1,6 +1,8 @@
+import type { IndexOptions } from '@sequelize/core';
 import { DataTypes, Sequelize, sql } from '@sequelize/core';
 import { OracleDialect } from '@sequelize/oracle';
 import { expect } from 'chai';
+import sinon from 'sinon';
 
 describe('Oracle query generator internals', () => {
   const sequelize = new Sequelize({ dialect: OracleDialect });
@@ -18,6 +20,7 @@ describe('Oracle query generator internals', () => {
       ['NULL default', { defaultValue: null }, 'does not support database defaults'],
       ['SQL default', { defaultValue: sql.literal('NULL') }, 'does not support database defaults'],
       ['primary key', { primaryKey: true }, 'cannot be used as a primary key'],
+      ['unique constraint', { unique: true }, 'cannot be used in a non-vector index'],
       [
         'foreign key',
         { references: { table: 'items', key: 'id' } },
@@ -60,6 +63,67 @@ describe('Oracle query generator internals', () => {
     });
   });
 
+  for (const [name, attributeOptions, indexes] of [
+    ['attribute uniqueness', { unique: true }, []],
+    ['named attribute uniqueness', { unique: 'embedding_unique' }, []],
+    ['attribute index', { index: true }, []],
+    ['model unique index', {}, [{ unique: true, fields: ['embedding_vector'] }]],
+    ['model ordinary index', {}, [{ fields: [{ name: 'embedding_vector' }] }]],
+    ['model composite index', {}, [{ fields: ['id', 'embedding_vector'] }]],
+  ] satisfies Array<[string, object, IndexOptions[]]>) {
+    for (const syncOptions of [{}, { alter: true }, { force: true, hooks: false }]) {
+      it(`rejects VECTOR ${name} before sync executes SQL with ${JSON.stringify(syncOptions)}`, async () => {
+        const Item = sequelize.define(
+          'IndexedVectorItem',
+          {
+            embedding: {
+              type: DataTypes.VECTOR(3),
+              columnName: 'embedding_vector',
+              ...attributeOptions,
+            },
+          },
+          { indexes: structuredClone(indexes) },
+        );
+        const query = sinon.stub(sequelize, 'queryRaw');
+
+        try {
+          // unique/index have already moved out of the physical attribute into resolved indexes.
+          const error = await Item.sync(syncOptions).catch((caughtError: unknown) => caughtError);
+          expect(error).to.be.instanceOf(Error);
+          expect((error as Error).message).to.equal(
+            'Oracle VECTOR column embedding_vector cannot be used in a non-vector index.',
+          );
+          expect(query.called).to.equal(false);
+        } finally {
+          query.restore();
+        }
+      });
+    }
+  }
+
+  for (const fields of [['embedding_vector'], [{ name: 'embedding_vector' }]]) {
+    it(`rejects direct VECTOR indexes on ${JSON.stringify(fields)} before index SQL`, async () => {
+      const description = sinon.stub(sequelize.queryInterface, 'describeTable').resolves({
+        embedding_vector: { type: 'VECTOR(3, FLOAT32)' },
+      } as never);
+      const query = sinon.stub(sequelize, 'queryRaw');
+
+      try {
+        const error = await sequelize.queryInterface
+          .addIndex('items', { fields })
+          .catch((caughtError: unknown) => caughtError);
+        expect(error).to.be.instanceOf(Error);
+        expect((error as Error).message).to.equal(
+          'Oracle VECTOR column embedding_vector cannot be used in a non-vector index.',
+        );
+        expect(query.called).to.equal(false);
+      } finally {
+        description.restore();
+        query.restore();
+      }
+    });
+  }
+
   it('validates VECTOR options for model preflight and direct column SQL', () => {
     const attribute = {
       type: sequelize.normalizeDataType(DataTypes.VECTOR(3)),
@@ -75,23 +139,31 @@ describe('Oracle query generator internals', () => {
     );
   });
 
-  const invalidDefault = { type: DataTypes.VECTOR(3), defaultValue: [1, 2, 3] };
-  for (const [name, operation] of Object.entries({
-    createTable: async () =>
-      sequelize.queryInterface.createTable('items', { embedding: invalidDefault }),
-    addColumn: async () => sequelize.queryInterface.addColumn('items', 'embedding', invalidDefault),
-    changeColumn: async () =>
-      sequelize.queryInterface.changeColumn('items', 'embedding', invalidDefault),
-  })) {
-    it(`rejects unsupported VECTOR options before ${name} reaches the database`, async () => {
-      const error = await operation().catch((caughtError: unknown) => caughtError);
+  for (const [option, options, message] of [
+    ['database defaults', { defaultValue: [1, 2, 3] }, 'does not support database defaults'],
+    ['uniqueness', { unique: true }, 'cannot be used in a non-vector index'],
+  ] as const) {
+    const attribute = { type: DataTypes.VECTOR(3), ...options };
+    for (const [name, operation] of Object.entries({
+      createTable: async () =>
+        sequelize.queryInterface.createTable('items', { embedding: attribute }),
+      addColumn: async () => sequelize.queryInterface.addColumn('items', 'embedding', attribute),
+      changeColumn: async () =>
+        sequelize.queryInterface.changeColumn('items', 'embedding', attribute),
+    })) {
+      it(`rejects VECTOR ${option} before ${name} executes SQL`, async () => {
+        const query = sinon.stub(sequelize, 'queryRaw');
 
-      // No connection is configured: validation must fail before accessing the database.
-      expect(error).to.be.instanceOf(Error);
-      expect((error as Error).message).to.equal(
-        'Oracle VECTOR column embedding does not support database defaults.',
-      );
-    });
+        try {
+          const error = await operation().catch((caughtError: unknown) => caughtError);
+          expect(error).to.be.instanceOf(Error);
+          expect((error as Error).message).to.equal(`Oracle VECTOR column embedding ${message}.`);
+          expect(query.called).to.equal(false);
+        } finally {
+          query.restore();
+        }
+      });
+    }
   }
 
   it('uses Oracle VECTOR bindings in insert and update queries', () => {

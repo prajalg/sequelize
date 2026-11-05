@@ -1,4 +1,4 @@
-import type { AttributeOptions, DataType } from '@sequelize/core';
+import type { AttributeOptions, DataType, IndexOptions } from '@sequelize/core';
 import { DataTypes, Model, QueryTypes, sql } from '@sequelize/core';
 import { expect } from 'chai';
 import semver from 'semver';
@@ -36,7 +36,7 @@ describe(getTestDialectTeaser('Oracle VECTOR column alterations'), () => {
     return OriginalItem;
   }
 
-  function changedModel(embedding: AttributeOptions | DataType) {
+  function changedModel(embedding: AttributeOptions | DataType, indexes: IndexOptions[] = []) {
     class ChangedItem extends Model {}
 
     ChangedItem.init(
@@ -44,7 +44,7 @@ describe(getTestDialectTeaser('Oracle VECTOR column alterations'), () => {
         id: { type: DataTypes.INTEGER, primaryKey: true },
         embedding,
       },
-      { sequelize, tableName, timestamps: false },
+      { sequelize, tableName, timestamps: false, indexes },
     );
 
     return ChangedItem;
@@ -74,6 +74,7 @@ describe(getTestDialectTeaser('Oracle VECTOR column alterations'), () => {
     ],
     ['NULL default', { defaultValue: null }, 'does not support database defaults'],
     ['primary key', { primaryKey: true }, 'cannot be used as a primary key'],
+    ['unique constraint', { unique: true }, 'cannot be used in a non-vector index'],
     [
       'foreign key',
       { references: { table: tableName, key: 'id' } },
@@ -94,15 +95,81 @@ describe(getTestDialectTeaser('Oracle VECTOR column alterations'), () => {
     });
   }
 
-  it('reports an error when adding uniqueness to a VECTOR column', async () => {
-    await createOriginal();
+  for (const [name, attributeOptions, indexes] of [
+    ['attribute uniqueness', { unique: true }, []],
+    ['attribute index', { index: true }, []],
+    ['model unique index', {}, [{ unique: true, fields: ['embedding'] }]],
+    ['model ordinary index', {}, [{ fields: [{ name: 'embedding' }] }]],
+    ['composite index', {}, [{ fields: ['id', 'embedding'] }]],
+  ] satisfies Array<[string, object, IndexOptions[]]>) {
+    for (const syncOptions of [{ alter: true }, { force: true, hooks: false }]) {
+      it(`rejects VECTOR ${name} without SQL or data loss with ${JSON.stringify(syncOptions)}`, async () => {
+        const Original = await createOriginal();
+        await Original.create({ id: 1, embedding: [1, 2, 3] });
+        const statements: string[] = [];
 
-    await expect(changedModel({ type: DataTypes.VECTOR(3), unique: true }).sync({ alter: true })).to
-      .be.rejected;
+        await expect(
+          changedModel({ type: DataTypes.VECTOR(3), ...attributeOptions }, indexes).sync({
+            ...syncOptions,
+            logging: statement => statements.push(statement),
+          }),
+        ).to.be.rejectedWith(
+          'Oracle VECTOR column embedding cannot be used in a non-vector index.',
+        );
+
+        // Rejection must happen before ALTER or DROP, not after Oracle rejects CREATE INDEX.
+        expect(statements).to.deep.equal([]);
+        expect((await Original.findByPk(1))?.get('embedding')).to.deep.equal([1, 2, 3]);
+        const description = await sequelize.queryInterface.describeTable(tableName);
+        expect(description.embedding.type).to.equal('VECTOR(3, FLOAT32)');
+      });
+    }
+  }
+
+  for (const unique of [true, false]) {
+    it(`rejects direct VECTOR indexes with unique: ${unique} before index DDL`, async () => {
+      const Original = await createOriginal();
+      await Original.create({ id: 1, embedding: [1, 2, 3] });
+      const statements: string[] = [];
+
+      await expect(
+        sequelize.queryInterface.addIndex(tableName, {
+          fields: ['embedding'],
+          unique,
+          logging: statement => statements.push(statement),
+        }),
+      ).to.be.rejectedWith('Oracle VECTOR column embedding cannot be used in a non-vector index.');
+
+      // A direct migration needs a metadata SELECT, but must never send CREATE INDEX.
+      expect(statements.length).to.be.greaterThan(0);
+      expect(statements.every(statement => !/\b(?:CREATE|ALTER|DROP)\b/i.test(statement))).to.equal(
+        true,
+      );
+      expect((await Original.findByPk(1))?.get('embedding')).to.deep.equal([1, 2, 3]);
+    });
+  }
+
+  it('allows an ordinary index on a non-VECTOR column in the same table', async () => {
+    await createOriginal();
+    await sequelize.queryInterface.addColumn(tableName, 'label', DataTypes.STRING);
+    await sequelize.queryInterface.addIndex(tableName, ['label'], {
+      name: 'vector_items_label_idx',
+    });
     const indexes = await sequelize.queryInterface.showIndex(tableName);
-    expect(
-      indexes.some(index => index.fields.some(field => field.attribute === 'embedding')),
-    ).to.equal(false);
+    expect(indexes.some(index => index.name === 'vector_items_label_idx')).to.equal(true);
+  });
+
+  it('rejects VECTOR uniqueness before bulk force sync can drop any table', async () => {
+    const Original = await createOriginal();
+    await Original.create({ id: 1, embedding: [1, 2, 3] });
+    changedModel({ type: DataTypes.VECTOR(3), unique: true });
+    const statements: string[] = [];
+
+    await expect(
+      sequelize.sync({ force: true, logging: statement => statements.push(statement) }),
+    ).to.be.rejectedWith('Oracle VECTOR column embedding cannot be used in a non-vector index.');
+    expect(statements).to.deep.equal([]);
+    expect((await Original.findByPk(1))?.get('embedding')).to.deep.equal([1, 2, 3]);
   });
 
   it('rejects an invalid VECTOR before force sync can drop the existing table', async () => {

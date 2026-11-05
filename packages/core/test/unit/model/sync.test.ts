@@ -1,7 +1,7 @@
 import { DataTypes } from '@sequelize/core';
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { sequelize } from '../../support';
+import { createSequelizeInstance, sequelize } from '../../support';
 
 const dialect = sequelize.dialect;
 
@@ -20,6 +20,29 @@ describe('Model#sync', () => {
         'Unsupported column options',
       );
       expect(validation).to.have.been.calledOnce;
+      expect(query).not.to.have.been.called;
+    } finally {
+      validation.restore();
+      query.restore();
+    }
+  });
+
+  it('validates all models and their indexes before bulk force sync can drop tables', async () => {
+    const instance = createSequelizeInstance();
+    instance.define('FirstSyncItem', { value: DataTypes.INTEGER });
+    const IndexedItem = instance.define('IndexedSyncItem', {
+      value: { type: DataTypes.INTEGER, unique: true },
+    });
+    const validation = sinon.stub(instance.queryGenerator, '_validateAttributes');
+    validation.onSecondCall().throws(new Error('Unsupported index'));
+    const query = sinon.stub(instance, 'queryRaw').resolves([[], 0]);
+
+    try {
+      await expect(instance.sync({ force: true, hooks: false })).to.be.rejectedWith(
+        'Unsupported index',
+      );
+      expect(validation).to.have.been.calledTwice;
+      expect(validation.secondCall.args[1]).to.deep.equal(IndexedItem.getIndexes());
       expect(query).not.to.have.been.called;
     } finally {
       validation.restore();

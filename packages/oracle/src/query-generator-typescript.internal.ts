@@ -3,6 +3,7 @@
 import type {
   BulkDeleteQueryOptions,
   CreateSchemaQueryOptions,
+  IndexOptions,
   RemoveColumnQueryOptions,
   RemoveConstraintQueryOptions,
   RemoveIndexQueryOptions,
@@ -52,13 +53,35 @@ export class OracleQueryGeneratorTypeScript extends AbstractQueryGenerator {
     this.#internals = internals;
   }
 
-  override _validateAttributes(columns: AttributesToSqlColumns): void {
+  override _validateAttributes(
+    columns: AttributesToSqlColumns,
+    indexes: readonly IndexOptions[] = [],
+  ): void {
+    const vectorColumns = new Set<string>();
     for (const [attributeName, column] of Object.entries(columns)) {
       const attribute = normalizeAttributeToSqlColumn(column);
-      this.#validateVectorColumnOptions(
-        attribute,
-        attribute.field ?? attribute.columnName ?? attributeName,
-      );
+      const columnName = attribute.field ?? attribute.columnName ?? attributeName;
+      this.#validateVectorColumnOptions(attribute, columnName);
+
+      // Detect VECTOR columns from data type instances or SQL type strings (e.g. from describeTable).
+      if (
+        attribute.type instanceof DataTypes.VECTOR ||
+        (typeof attribute.type === 'string' && /^VECTOR(?:\s*\(|$)/i.test(attribute.type))
+      ) {
+        vectorColumns.add(columnName);
+      }
+    }
+
+    for (const index of indexes) {
+      for (const field of index.fields ?? []) {
+        const columnName =
+          typeof field === 'string' ? field : 'name' in field ? field.name : undefined;
+        if (columnName && vectorColumns.has(columnName)) {
+          throw new Error(
+            `Oracle VECTOR column ${columnName} cannot be used in a non-vector index.`,
+          );
+        }
+      }
     }
   }
 
@@ -80,6 +103,10 @@ export class OracleQueryGeneratorTypeScript extends AbstractQueryGenerator {
 
     if (attribute.primaryKey) {
       throw new Error(`Oracle VECTOR column ${columnName} cannot be used as a primary key.`);
+    }
+
+    if (attribute.unique) {
+      throw new Error(`Oracle VECTOR column ${columnName} cannot be used in a non-vector index.`);
     }
 
     if (attribute.references) {

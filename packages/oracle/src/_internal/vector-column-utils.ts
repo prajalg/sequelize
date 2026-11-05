@@ -1,4 +1,29 @@
-import type { TableOrModel } from '@sequelize/core';
+import type {
+  AbstractQueryInterface,
+  QueryInterfaceIndexOptions,
+  TableOrModel,
+} from '@sequelize/core';
+
+/**
+ * Reads column metadata and validates the index against Oracle VECTOR restrictions.
+ *
+ * @see https://docs.oracle.com/en/database/oracle/oracle-database/26/vecse/create-tables-using-vector-data-type.html
+ * @param queryInterface
+ * @param tableName
+ * @param attributes
+ * @param options
+ */
+export async function validateOracleVectorIndex(
+  queryInterface: AbstractQueryInterface,
+  tableName: TableOrModel,
+  attributes: string[] | QueryInterfaceIndexOptions,
+  options?: QueryInterfaceIndexOptions,
+): Promise<void> {
+  const index = Array.isArray(attributes) ? { ...options, fields: attributes } : attributes;
+  const { type: ignoreIndexType, ...describeOptions } = index;
+  const columns = await queryInterface.describeTable(tableName, describeOptions);
+  queryInterface.queryGenerator._validateAttributes(columns, [index]);
+}
 
 interface OracleColumnMetadata {
   type: string;
