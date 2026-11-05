@@ -1,4 +1,4 @@
-import { DataTypes, Sequelize } from '@sequelize/core';
+import { DataTypes, Sequelize, ValidationErrorItem } from '@sequelize/core';
 import * as BaseTypes from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/data-types.js';
 import { OracleDialect } from '@sequelize/oracle';
 import { expect } from 'chai';
@@ -61,6 +61,31 @@ describe('Oracle VECTOR data type', () => {
     const value = new Float32Array([1, 2, 3]);
 
     expect(toOracleVector(DataTypes.VECTOR(3)).toBindableValue(value)).to.equal(value);
+  });
+
+  it('rejects non-finite results of FLOAT32 conversion before collecting a bind value', () => {
+    const type = toOracleVector(DataTypes.VECTOR(1));
+    let bound = false;
+
+    expect(() =>
+      type.getBindParamSql([Number.MAX_VALUE], {
+        bindParam: () => {
+          bound = true;
+
+          return '$value';
+        },
+      }),
+    ).to.throw(ValidationErrorItem, 'VECTOR value overflows FLOAT32');
+    expect(bound).to.equal(false);
+  });
+
+  it('accepts finite FLOAT32 boundaries and normal rounding without changing the input', () => {
+    const maximum = 3.402_823_466_385_288_6e38;
+    const value = [maximum, -maximum, 0.1];
+    const converted = toOracleVector(DataTypes.VECTOR(3)).toBindableValue(value);
+
+    expect(converted).to.deep.equal(new Float32Array([maximum, -maximum, Math.fround(0.1)]));
+    expect(value).to.deep.equal([maximum, -maximum, 0.1]);
   });
 
   it('uses core element validation', () => {

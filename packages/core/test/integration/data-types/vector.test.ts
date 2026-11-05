@@ -5,7 +5,7 @@ import type {
   VectorElementType,
   VectorValue,
 } from '@sequelize/core';
-import { DataTypes, Model } from '@sequelize/core';
+import { DataTypes, Model, ValidationErrorItem } from '@sequelize/core';
 import { expect } from 'chai';
 import semver from 'semver';
 import { beforeEach2, getTestDialectTeaser, sequelize } from '../support';
@@ -227,6 +227,32 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
   }
 
   if (dialect.name === 'oracle') {
+    for (const value of [Number.MAX_VALUE, -Number.MAX_VALUE]) {
+      it(`rejects FLOAT32 conversion overflow from ${value} before executing an INSERT`, async () => {
+        class VectorItem extends Model {}
+
+        VectorItem.init(
+          {
+            id: { type: DataTypes.INTEGER, primaryKey: true },
+            embedding: DataTypes.VECTOR(1),
+          },
+          { sequelize, timestamps: false },
+        );
+        await VectorItem.sync({ force: true });
+        const statements: string[] = [];
+
+        // A finite input must not reach Oracle as an infinite FLOAT32 bind value.
+        await expect(
+          VectorItem.create(
+            { id: 1, embedding: [value] },
+            { logging: statement => statements.push(statement) },
+          ),
+        ).to.be.rejectedWith(ValidationErrorItem, 'VECTOR value overflows FLOAT32');
+        expect(statements).to.deep.equal([]);
+        expect(await VectorItem.count()).to.equal(0);
+      });
+    }
+
     for (const allowNull of [true, false]) {
       it(`preserves VECTOR nullability when sync({ alter: true }) rejects changing allowNull from ${allowNull} to ${!allowNull}`, async () => {
         class OriginalVectorItem extends Model {}

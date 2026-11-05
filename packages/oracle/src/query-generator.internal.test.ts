@@ -1,5 +1,5 @@
 import type { IndexOptions } from '@sequelize/core';
-import { DataTypes, Sequelize, sql } from '@sequelize/core';
+import { DataTypes, Sequelize, ValidationErrorItem, sql } from '@sequelize/core';
 import { OracleDialect } from '@sequelize/oracle';
 import { expect } from 'chai';
 import sinon from 'sinon';
@@ -186,6 +186,41 @@ describe('Oracle query generator internals', () => {
 
     expect(insert.bind?.sequelize_1).to.deep.equal(Float32Array.from([1, 2, 3]));
     expect(update.bind?.sequelize_1).to.deep.equal(Float32Array.from([4, 5, 6]));
+  });
+
+  for (const value of [Number.MAX_VALUE, -Number.MAX_VALUE]) {
+    it(`rejects FLOAT32 overflow from ${value} when generating a bound INSERT`, () => {
+      const attributes = {
+        embedding: {
+          attributeName: 'embedding',
+          columnName: 'embedding',
+          fieldName: 'embedding',
+          type: sequelize.normalizeDataType(DataTypes.VECTOR(3)),
+        },
+      };
+
+      // The source value is finite, but conversion to the driver's Float32Array would overflow.
+      expect(() =>
+        queryGenerator.insertQuery('items', { embedding: [1, value, 3] }, attributes),
+      ).to.throw(ValidationErrorItem, 'VECTOR value overflows FLOAT32');
+    });
+  }
+
+  it('preserves large finite FLOAT64 elements in bound INSERT values', () => {
+    const attributes = {
+      embedding: {
+        attributeName: 'embedding',
+        columnName: 'embedding',
+        fieldName: 'embedding',
+        type: sequelize.normalizeDataType(
+          DataTypes.VECTOR({ dimensions: 2, elementType: 'float64' }),
+        ),
+      },
+    };
+    const value = [Number.MAX_VALUE, -Number.MAX_VALUE];
+    const insert = queryGenerator.insertQuery('items', { embedding: value }, attributes);
+
+    expect(insert.bind?.sequelize_1).to.deep.equal(Float64Array.from(value));
   });
 
   it('reads VECTOR_INFO when the connected database supports vectors', () => {
