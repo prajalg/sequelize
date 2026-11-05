@@ -3,6 +3,7 @@
 import type {
   BulkDeleteQueryOptions,
   CreateSchemaQueryOptions,
+  IndexOptions,
   RemoveColumnQueryOptions,
   RemoveConstraintQueryOptions,
   RemoveIndexQueryOptions,
@@ -21,8 +22,10 @@ import {
   normalizeAttributeToSqlColumn,
 } from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/query-generator-typescript.js';
 import type {
+  AttributeToSqlColumn,
   AttributeToSqlInput,
   AttributeToSqlOptions,
+  AttributesToSqlColumns,
 } from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/query-generator.internal-types.js';
 import type { TableNameWithSchema } from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/query-interface.js';
 import { rejectInvalidOptions } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/check.js';
@@ -34,6 +37,7 @@ import {
 import { EMPTY_SET } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/object.js';
 import { defaultValueSchemable } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/query-builder-utils.js';
 import { generateIndexName } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/string.js';
+import semver from 'semver';
 import type { OracleDialect } from './dialect.js';
 import { OracleQueryGeneratorInternal } from './query-generator.internal.js';
 
@@ -49,13 +53,87 @@ export class OracleQueryGeneratorTypeScript extends AbstractQueryGenerator {
     this.#internals = internals;
   }
 
+  override _validateAttributes(
+    columns: AttributesToSqlColumns,
+    indexes: readonly IndexOptions[] = [],
+  ): void {
+    const vectorColumns = new Set<string>();
+    for (const [attributeName, column] of Object.entries(columns)) {
+      const attribute = normalizeAttributeToSqlColumn(column);
+      const columnName = attribute.field ?? attribute.columnName ?? attributeName;
+      this.#validateVectorColumnOptions(attribute, columnName);
+
+      // Detect VECTOR columns from data type instances or SQL type strings (e.g. from describeTable).
+      if (
+        attribute.type instanceof DataTypes.VECTOR ||
+        (typeof attribute.type === 'string' && /^VECTOR(?:\s*\(|$)/i.test(attribute.type))
+      ) {
+        vectorColumns.add(columnName);
+      }
+    }
+
+    for (const index of indexes) {
+      for (const field of index.fields ?? []) {
+        const columnName =
+          typeof field === 'string' ? field : 'name' in field ? field.name : undefined;
+        if (columnName && vectorColumns.has(columnName)) {
+          throw new Error(
+            `Oracle VECTOR column ${columnName} cannot be used in a non-vector index.`,
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * Rejects schema options unsupported by Oracle VECTOR.
+   *
+   * @see https://docs.oracle.com/en/database/oracle/oracle-database/26/vecse/create-tables-using-vector-data-type.html
+   * @param attribute The column definition.
+   * @param columnName The physical column name used in error messages.
+   */
+  #validateVectorColumnOptions(attribute: AttributeToSqlColumn, columnName: string): void {
+    if (!(attribute.type instanceof DataTypes.VECTOR)) {
+      return;
+    }
+
+    if (defaultValueSchemable(attribute.defaultValue, this.dialect)) {
+      throw new Error(`Oracle VECTOR column ${columnName} does not support database defaults.`);
+    }
+
+    if (attribute.primaryKey) {
+      throw new Error(`Oracle VECTOR column ${columnName} cannot be used as a primary key.`);
+    }
+
+    if (attribute.unique) {
+      throw new Error(`Oracle VECTOR column ${columnName} cannot be used in a non-vector index.`);
+    }
+
+    if (attribute.references) {
+      throw new Error(`Oracle VECTOR column ${columnName} cannot be used as a foreign key.`);
+    }
+
+    // Oracle identity columns require a numeric SQL type:
+    // https://docs.oracle.com/en/database/oracle/oracle-database/26/sqlrf/CREATE-TABLE.html
+    if (attribute.autoIncrement) {
+      throw new Error(`Oracle VECTOR column ${columnName} does not support autoIncrement.`);
+    }
+  }
+
   describeTableQuery(tableName: TableOrModel) {
     const table = this.extractTableDetails(tableName);
     const currTableName = this.getCatalogName(table.tableName);
     const schema = this.getCatalogName(table.schema);
 
+    const databaseVersion = this.sequelize.getDatabaseVersionIfExist();
+    const parsedDatabaseVersion = databaseVersion ? semver.coerce(databaseVersion) : null;
+    const vectorInfoColumn =
+      parsedDatabaseVersion && semver.gte(parsedDatabaseVersion, '23.4.0')
+        ? ', atc.VECTOR_INFO'
+        : '';
+
     return [
-      'SELECT atc.COLUMN_NAME, atc.DATA_TYPE, atc.DATA_LENGTH, atc.CHAR_LENGTH, atc.DEFAULT_LENGTH, atc.NULLABLE, ucc.constraint_type ',
+      `SELECT atc.COLUMN_NAME, atc.DATA_TYPE, atc.DATA_LENGTH, atc.CHAR_LENGTH, atc.DEFAULT_LENGTH, atc.NULLABLE${vectorInfoColumn}, ucc.constraint_type `,
       'FROM all_tab_columns atc ',
       'LEFT OUTER JOIN ',
       '(SELECT acc.column_name, acc.table_name, ac.constraint_type FROM all_cons_columns acc INNER JOIN all_constraints ac ON acc.constraint_name = ac.constraint_name) ucc ',
@@ -419,6 +497,10 @@ export class OracleQueryGeneratorTypeScript extends AbstractQueryGenerator {
 
   attributeToSql(column: AttributeToSqlInput, options?: AttributeToSqlOptions): string {
     const attribute = normalizeAttributeToSqlColumn(column);
+    this.#validateVectorColumnOptions(
+      attribute,
+      attribute.field ?? attribute.columnName ?? '(unnamed)',
+    );
 
     // handle self referential constraints
     const model = attribute.Model;

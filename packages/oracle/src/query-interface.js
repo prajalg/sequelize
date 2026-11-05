@@ -4,8 +4,39 @@ import { AbstractQueryInterface, QueryTypes } from '@sequelize/core';
 import { assertNoReservedBind } from '@sequelize/core/_non-semver-use-at-your-own-risk_/utils/sql.js';
 import intersection from 'lodash/intersection.js';
 import uniq from 'lodash/uniq.js';
+import {
+  shouldSkipOracleVectorColumnChange,
+  validateOracleVectorIndex,
+} from './_internal/vector-column-utils.js';
 
 export class OracleQueryInterface extends AbstractQueryInterface {
+  async addIndex(tableName, attributes, options, rawTablename) {
+    // Migrations can call addIndex without going through Model.sync validation.
+    await validateOracleVectorIndex(this, tableName, attributes, options);
+
+    return super.addIndex(tableName, attributes, options, rawTablename);
+  }
+
+  async changeColumn(tableName, attributeName, dataTypeOrOptions, options) {
+    this.queryGenerator._validateAttributes({
+      [attributeName]: this.normalizeAttribute(dataTypeOrOptions),
+    });
+
+    if (
+      await shouldSkipOracleVectorColumnChange(
+        this,
+        tableName,
+        attributeName,
+        dataTypeOrOptions,
+        options,
+      )
+    ) {
+      return;
+    }
+
+    return super.changeColumn(tableName, attributeName, dataTypeOrOptions, options);
+  }
+
   async upsert(tableName, insertValues, updateValues, where, options) {
     if (options.bind) {
       assertNoReservedBind(options.bind);
