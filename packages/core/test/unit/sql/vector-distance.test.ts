@@ -112,7 +112,8 @@ describe('sql.vectorDistance', () => {
         },
         {
           default: new Error('Function VectorDistance is not supported'),
-          oracle: 'VECTOR_DISTANCE("embedding_vector", VECTOR(\'[1,2,3]\', 3, FLOAT64), COSINE)',
+          oracle:
+            'VECTOR_DISTANCE("embedding_vector", TO_VECTOR(JSON_ARRAY(1D,2D,3D RETURNING CLOB), 3, FLOAT64), COSINE)',
         },
       );
     });
@@ -140,7 +141,7 @@ describe('sql.vectorDistance', () => {
         {
           default: new Error('Function VectorDistance is not supported'),
           oracle:
-            'VECTOR_DISTANCE("items"."embedding_vector", VECTOR(\'[1,2,3]\', 3, FLOAT64), COSINE)',
+            'VECTOR_DISTANCE("items"."embedding_vector", TO_VECTOR(JSON_ARRAY(1D,2D,3D RETURNING CLOB), 3, FLOAT64), COSINE)',
         },
       );
     });
