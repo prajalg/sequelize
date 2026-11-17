@@ -264,6 +264,42 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
       });
     });
 
+    it('qualifies the parent VECTOR attribute when an included model has the same column', async () => {
+      const Collection = sequelize.define(
+        'VectorCollection',
+        { embedding: { type: DataTypes.VECTOR(3), columnName: 'embedding_vector' } },
+        { timestamps: false },
+      );
+      const Item = sequelize.define(
+        'IncludedVectorItem',
+        { embedding: { type: DataTypes.VECTOR(3), columnName: 'embedding_vector' } },
+        { timestamps: false },
+      );
+      Collection.hasMany(Item, { as: 'items', foreignKey: 'collectionId' });
+      await sequelize.sync({ force: true });
+
+      const collections = await Collection.bulkCreate([
+        { embedding: [1, 0, 0] },
+        { embedding: [0, 1, 0] },
+      ]);
+      // Reverse the child vectors so ordering by the wrong table would reverse the results.
+      await Item.bulkCreate([
+        { collectionId: collections[0].get('id'), embedding: [0, 1, 0] },
+        { collectionId: collections[1].get('id'), embedding: [1, 0, 0] },
+      ]);
+
+      const result = await Collection.findAll({
+        // Do not select the parent vector: its output name could hide an ambiguous reference.
+        attributes: ['id'],
+        include: [{ association: 'items' }],
+        order: [sql.vectorDistance(sql.attribute('embedding'), [1, 0, 0], 'cosine')],
+      });
+
+      expect(result.map(item => item.get('id'))).to.deep.equal(
+        collections.map(item => item.get('id')),
+      );
+    });
+
     it('resolves mapped VECTOR attributes through an include', async () => {
       class VectorCollection extends Model {}
 

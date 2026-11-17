@@ -75,6 +75,27 @@ describe('QueryGenerator#selectQuery', () => {
     return { User, Project, ProjectContributor };
   });
 
+  for (const tableAs of [undefined, 'root_alias']) {
+    it(`qualifies attributes in ORDER BY expressions with ${tableAs ?? 'the model alias'}`, () => {
+      const Item = sequelize.define(
+        'OrderedItem',
+        { name: { type: DataTypes.STRING, columnName: 'name_column' } },
+        { tableName: 'ordered_items', timestamps: false },
+      );
+      const alias = tableAs ?? Item.name;
+      const options = {
+        attributes: ['id'],
+        tableAs,
+        order: [fn('LOWER', attribute('name'))],
+      };
+
+      expectsql(queryGenerator.selectQuery(Item.table, options, Item), {
+        default: `SELECT [id] FROM [ordered_items] AS [${alias}] ORDER BY LOWER([${alias}].[name_column]);`,
+        oracle: `SELECT "id" FROM "ordered_items" "${alias}" ORDER BY LOWER("${alias}"."name_column");`,
+      });
+    });
+  }
+
   describe('limit/offset', () => {
     it('supports offset without limit', () => {
       const { User } = vars;
