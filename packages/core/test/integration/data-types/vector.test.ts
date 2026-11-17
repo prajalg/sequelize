@@ -347,14 +347,28 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
     dimensions: number;
     metric: VectorMetric;
     value: VectorValue;
+    farValue: VectorValue;
   }> = [
-    { elementType: 'float64' as const, dimensions: 3, metric: 'euclidean', value: [1, 0, 0] },
-    { elementType: 'int8' as const, dimensions: 3, metric: 'manhattan', value: [1, 0, 0] },
+    {
+      elementType: 'float64',
+      dimensions: 3,
+      metric: 'euclidean',
+      value: [1, 0, 0],
+      farValue: [4, 4, 4],
+    },
+    {
+      elementType: 'int8',
+      dimensions: 3,
+      metric: 'manhattan',
+      value: [1, 0, 0],
+      farValue: [-1, 0, 0],
+    },
     {
       elementType: 'binary' as const,
       dimensions: 24,
       metric: 'hamming',
       value: new Uint8Array([0b1111_0000, 0, 0]),
+      farValue: new Uint8Array([0b0000_1111, 0, 0]),
     },
   ];
 
@@ -363,33 +377,43 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
       continue;
     }
 
-    it(`binds ${testCase.elementType} literal vectors for ${testCase.metric} distance`, async () => {
-      class VectorItem extends Model<
-        InferAttributes<VectorItem>,
-        InferCreationAttributes<VectorItem>
-      > {
-        declare id: CreationOptional<number>;
-        declare embedding: VectorValue;
+    describe(`${testCase.elementType} vector distance`, () => {
+      if (testCase.elementType === 'binary') {
+        skipSuiteIfOracleVersionBelow('23.5.0');
       }
 
-      VectorItem.init(
-        {
-          id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-          embedding: DataTypes.VECTOR({
-            dimensions: testCase.dimensions,
-            elementType: testCase.elementType,
-          }),
-        },
-        { sequelize, timestamps: false },
-      );
-      await VectorItem.sync({ force: true });
-      const item = await VectorItem.create({ embedding: testCase.value });
+      it(`orders rows by ${testCase.metric} distance using a literal vector`, async () => {
+        class VectorItem extends Model<
+          InferAttributes<VectorItem>,
+          InferCreationAttributes<VectorItem>
+        > {
+          declare id: CreationOptional<number>;
+          declare embedding: VectorValue;
+        }
 
-      const nearest = await VectorItem.findOne({
-        order: [sql.vectorDistance(sql.attribute('embedding'), testCase.value, testCase.metric)],
+        VectorItem.init(
+          {
+            id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+            embedding: DataTypes.VECTOR({
+              dimensions: testCase.dimensions,
+              elementType: testCase.elementType,
+            }),
+          },
+          { sequelize, timestamps: false },
+        );
+        await VectorItem.sync({ force: true });
+        // Insert the farther row first so insertion order cannot satisfy the assertion.
+        const items = await VectorItem.bulkCreate([
+          { embedding: testCase.farValue },
+          { embedding: testCase.value },
+        ]);
+
+        const nearest = await VectorItem.findAll({
+          order: [sql.vectorDistance(sql.attribute('embedding'), testCase.value, testCase.metric)],
+        });
+
+        expect(nearest.map(item => item.id)).to.deep.equal([items[1].id, items[0].id]);
       });
-
-      expect(nearest?.id).to.equal(item.id);
     });
   }
 
