@@ -15,6 +15,7 @@ import {
   sql,
 } from '@sequelize/core';
 import { expect } from 'chai';
+import sinon from 'sinon';
 import {
   beforeEach2,
   getTestDialectTeaser,
@@ -420,6 +421,49 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
       });
 
       expect(nearest.map(item => item.id)).to.deep.equal([items[0].id, items[1].id]);
+    });
+  }
+
+  if (
+    supportsDistanceMetric('cosine', 'float32') &&
+    vectorSupport.elementTypes.float32!.maxDimensions >= 1536
+  ) {
+    it('orders documents by a bound 1536-dimension query vector', async () => {
+      const vectorType = DataTypes.VECTOR(1536).toDialectDataType(dialect);
+      const Document = sequelize.define(
+        'VectorDocument',
+        { embedding: vectorType },
+        { timestamps: false },
+      );
+      await Document.sync({ force: true });
+
+      const queryVector = Array.from({ length: 1536 }, (_, index) => Math.sin(index + 1));
+      // A realistic query vector exceeds Oracle's 4000-byte quoted-literal limit.
+      expect(JSON.stringify(queryVector).length).to.be.greaterThan(4000);
+      const documents = await Document.bulkCreate([
+        { embedding: queryVector.map(value => -value) },
+        { embedding: queryVector },
+      ]);
+
+      const querySpy = sinon.spy(sequelize, 'queryRaw');
+      try {
+        const nearest = await Document.findAll({
+          attributes: ['id'],
+          order: [sql.vectorDistance(sql.attribute('embedding'), queryVector, 'cosine')],
+          limit: 2,
+        });
+
+        expect(nearest.map(document => document.get('id'))).to.deep.equal([
+          documents[1].get('id'),
+          documents[0].get('id'),
+        ]);
+        expect(querySpy).to.have.been.calledOnce;
+        expect(Object.values(querySpy.firstCall.args[1]?.bind ?? {})).to.deep.include(
+          vectorType.toBindableValue(queryVector),
+        );
+      } finally {
+        querySpy.restore();
+      }
     });
   }
 
