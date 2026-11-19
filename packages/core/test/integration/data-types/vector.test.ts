@@ -399,20 +399,28 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
       });
 
       it('orders a grouped-limit result using projected VECTOR names', async () => {
+        // The nearer row is inserted last in group A and first in group B.
+        const [nearer] = await vars.Collection.bulkCreate([
+          { ownerId: vars.collections[0].get('ownerId'), embedding: [1, 1, 0] },
+          { ownerId: vars.collections[1].get('ownerId'), embedding: [-1, 0, 0] },
+        ]);
         const options = {
           attributes: ['id', ['embedding_vector', 'embedding'] as [string, string]],
           groupedLimit: {
             limit: 1,
-            on: 'id',
-            values: vars.collections.map(item => item.get('id')),
+            on: 'ownerId',
+            values: vars.collections.map(item => item.get('ownerId')),
           },
           order: [sql.vectorDistance(sql.attribute('embedding'), [1, 0, 0], 'cosine')],
         };
         const result = await vars.Collection.findAll(options);
 
-        expect(result.map(item => item.get('id'))).to.have.members(
-          vars.collections.map(item => item.get('id')),
-        );
+        const expectedIds = [vars.collections[1].get('id'), nearer.get('id')];
+        if (dialect.supports.topLevelOrderByRequired) {
+          expect(result.map(item => item.get('id'))).to.deep.equal(expectedIds);
+        } else {
+          expect(result.map(item => item.get('id'))).to.have.members(expectedIds);
+        }
       });
 
       it('reuses a selected distance alias when its VECTOR column is not projected', async () => {
