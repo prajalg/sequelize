@@ -484,6 +484,13 @@ Use Sequelize#query if you wish to use replacements.`);
     }
 
     if (options.force) {
+      for (const model of this.models) {
+        this.queryGenerator._validateAttributes(
+          Object.fromEntries(model.modelDefinition.physicalAttributes),
+          model.getIndexes(),
+        );
+      }
+
       await this.drop({
         ...options,
         cascade: this.dialect.supports.dropTable.cascade || undefined,
@@ -560,6 +567,8 @@ Use Sequelize#query if you wish to use replacements.`);
       for (const model of this.models) {
         await model.drop(options);
       }
+
+      return;
     }
 
     const sortedModels = this.models.getModelsTopoSortedByForeignKey();
@@ -569,6 +578,8 @@ Use Sequelize#query if you wish to use replacements.`);
       for (const model of sortedModels) {
         await model.drop(options);
       }
+
+      return;
     }
 
     if (this.dialect.name === 'sqlite3') {

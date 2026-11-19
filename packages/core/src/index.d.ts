@@ -29,6 +29,10 @@ export type {
   RangeOptions,
   TextOptions,
   TimeOptions,
+  VectorElementType,
+  VectorOptions,
+  VectorTypedArray,
+  VectorValue,
   VirtualOptions,
 } from './abstract-dialect/data-types.js';
 export {
@@ -37,9 +41,9 @@ export {
   type DialectOptions,
 } from './abstract-dialect/dialect.js';
 export { AbstractQueryGenerator } from './abstract-dialect/query-generator.js';
-export * from './abstract-dialect/query-generator.types.js';
+export type * from './abstract-dialect/query-generator.types.js';
 export * from './abstract-dialect/query-interface.js';
-export * from './abstract-dialect/query-interface.types.js';
+export type * from './abstract-dialect/query-interface.types.js';
 export * from './abstract-dialect/query.js';
 export type { AcquireConnectionOptions } from './abstract-dialect/replication-pool.js';
 export type { WhereOptions } from './abstract-dialect/where-sql-builder-types.js';
