@@ -361,6 +361,26 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
         });
       }
 
+      for (const aliased of [false, true]) {
+        for (const minifyAliases of [false, true]) {
+          it(`orders paginated parents with ${aliased ? 'aliased' : 'bare'} Attribute projections (minifyAliases: ${minifyAliases})`, async () => {
+            const projection = aliased
+              ? ([sql.attribute('embedding'), 'selectedEmbedding'] as const)
+              : sql.attribute('embedding');
+            const result = await vars.Collection.findAll({
+              // @ts-expect-error -- Bare Attribute projections work at runtime but are not typed.
+              attributes: ['id', projection],
+              include: [{ association: 'items' }],
+              order: [sql.vectorDistance(sql.attribute('embedding'), [1, 0, 0], 'cosine')],
+              limit: 1,
+              minifyAliases,
+            });
+
+            expect(result[0].get('id')).to.equal(vars.collections[1].get('id'));
+          });
+        }
+      }
+
       it('resolves both column operands inside a wrapped vector distance', async () => {
         const result = await vars.Collection.findAll({
           attributes: ['id', 'embedding', 'comparison'],

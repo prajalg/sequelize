@@ -90,6 +90,56 @@ describe('sql.vectorDistance', () => {
       });
     }
 
+    for (const aliased of [false, true]) {
+      for (const minifyAliases of [false, true]) {
+        it(`resolves ${aliased ? 'aliased' : 'bare'} Attribute projections in a pagination subquery (minifyAliases: ${minifyAliases})`, () => {
+          const Item = sequelize.define(
+            'ProjectedItem',
+            {
+              embedding: { type: DataTypes.VECTOR(3), columnName: 'embedding_vector' },
+            },
+            { timestamps: false },
+          );
+          const projection = aliased
+            ? ([sql.attribute('embedding'), 'selectedEmbedding'] as const)
+            : sql.attribute('embedding');
+          const outputName = aliased
+            ? minifyAliases
+              ? '_0'
+              : 'selectedEmbedding'
+            : 'embedding_vector';
+          const selectedSql = `"embedding_vector"${aliased ? ` AS "${outputName}"` : ''}`;
+
+          expectsql(
+            () =>
+              queryGenerator.selectQuery(
+                Item.table,
+                {
+                  model: Item,
+                  // @ts-expect-error -- Bare Attribute projections work at runtime but are not typed.
+                  attributes: ['id', projection],
+                  subQuery: true,
+                  minifyAliases,
+                  limit: 1,
+                  order: [
+                    sql.vectorDistance(
+                      sql.attribute('embedding'),
+                      sql.attribute('embedding'),
+                      'cosine',
+                    ),
+                  ],
+                },
+                Item,
+              ),
+            {
+              default: new Error('Function VectorDistance is not supported'),
+              oracle: `SELECT "ProjectedItem".* FROM (SELECT "id", ${selectedSql} FROM "ProjectedItems" "ProjectedItem" ORDER BY VECTOR_DISTANCE("ProjectedItem"."embedding_vector", "ProjectedItem"."embedding_vector", COSINE) OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY) "ProjectedItem" ORDER BY VECTOR_DISTANCE("ProjectedItem"."${outputName}", "ProjectedItem"."${outputName}", COSINE);`,
+            },
+          );
+        });
+      }
+    }
+
     it('binds a literal vector through the attribute VECTOR type', () => {
       let boundValue: unknown;
 

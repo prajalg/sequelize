@@ -164,9 +164,15 @@ function formatOrderOperand(
   let outputName = columnName;
   if (context.derivedTable && !context.isSubQuery) {
     // A derived table exposes SELECT aliases, not necessarily the physical column names.
-    const projection = context.attributes?.find(
-      item => item === columnName || (Array.isArray(item) && item[0] === columnName),
-    );
+    const projection = context.attributes?.find(item => {
+      const projected = Array.isArray(item) ? item[0] : item;
+      const projectedColumnName =
+        projected instanceof Attribute
+          ? (model?.getColumnNameLoose(projected.attributeName) ?? projected.attributeName)
+          : projected;
+
+      return projectedColumnName === columnName;
+    });
     if (projection === undefined && context.attributes && !context.attributes.includes('*')) {
       throw new Error(
         `sql.vectorDistance cannot order by ${attribute.attributeName}: the column is not selected by the pagination subquery. Include the attribute or select the distance with an alias.`,
