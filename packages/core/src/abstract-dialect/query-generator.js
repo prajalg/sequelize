@@ -1465,7 +1465,7 @@ export class AbstractQueryGenerator extends AbstractQueryGeneratorTypeScript {
     // Add ORDER to sub or main query
     if (options.order) {
       const orders = this.getQueryOrders(
-        { ...options, model, mainAlias: mainTable.as || undefined },
+        subQuery ? options : { ...options, model, mainAlias: mainTable.as || undefined },
         model,
         subQuery,
       );
