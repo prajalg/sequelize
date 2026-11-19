@@ -76,7 +76,7 @@ describe('QueryGenerator#selectQuery', () => {
   });
 
   for (const tableAs of [undefined, 'root_alias']) {
-    it(`qualifies attributes in ORDER BY expressions with ${tableAs ?? 'the model alias'}`, () => {
+    it(`preserves ordinary ORDER BY expression rendering with ${tableAs ?? 'the model alias'}`, () => {
       const Item = sequelize.define(
         'OrderedItem',
         { name: { type: DataTypes.STRING, columnName: 'name_column' } },
@@ -85,14 +85,109 @@ describe('QueryGenerator#selectQuery', () => {
       const alias = tableAs ?? Item.name;
       const options = {
         attributes: ['id'],
+        model: Item,
         tableAs,
         order: [fn('LOWER', attribute('name'))],
       };
 
       expectsql(queryGenerator.selectQuery(Item.table, options, Item), {
-        default: `SELECT [id] FROM [ordered_items] AS [${alias}] ORDER BY LOWER([${alias}].[name_column]);`,
-        oracle: `SELECT "id" FROM "ordered_items" "${alias}" ORDER BY LOWER("${alias}"."name_column");`,
+        default: `SELECT [id] FROM [ordered_items] AS [${alias}] ORDER BY LOWER([name_column]);`,
+        oracle: `SELECT "id" FROM "ordered_items" "${alias}" ORDER BY LOWER("name_column");`,
       });
+    });
+  }
+
+  it('keeps computed projection aliases unqualified in ORDER BY', () => {
+    const Item = sequelize.define('OrderedItem', { name: DataTypes.STRING }, { timestamps: false });
+
+    expectsql(
+      queryGenerator.selectQuery(
+        Item.table,
+        {
+          model: Item,
+          attributes: [[fn('LOWER', col('name')), 'lowerName']],
+          order: [fn('LENGTH', attribute('lowerName'))],
+        },
+        Item,
+      ),
+      {
+        default:
+          'SELECT LOWER([name]) AS [lowerName] FROM [OrderedItems] AS [OrderedItem] ORDER BY LENGTH([lowerName]);',
+        oracle:
+          'SELECT LOWER("name") AS "lowerName" FROM "OrderedItems" "OrderedItem" ORDER BY LENGTH("lowerName");',
+      },
+    );
+  });
+
+  it('preserves the model supplied through query options when ordering expressions', () => {
+    const Item = sequelize.define(
+      'OrderedItem',
+      {
+        name: { type: DataTypes.STRING, columnName: 'name_column' },
+      },
+      { timestamps: false },
+    );
+
+    expectsql(
+      queryGenerator.selectQuery(Item.table, {
+        model: Item,
+        attributes: ['id'],
+        order: [fn('LOWER', attribute('name'))],
+      }),
+      {
+        default: 'SELECT [id] FROM [OrderedItems] ORDER BY LOWER([name_column]);',
+      },
+    );
+  });
+
+  it('keeps aggregate output aliases unqualified in ORDER BY', () => {
+    const Item = sequelize.define('OrderedItem', {}, { timestamps: false });
+
+    expectsql(
+      queryGenerator.selectQuery(
+        Item.table,
+        {
+          model: Item,
+          attributes: [[fn('COUNT', col('id')), 'count']],
+          order: [fn('ABS', attribute('count'))],
+        },
+        Item,
+      ),
+      {
+        default:
+          'SELECT COUNT([id]) AS [count] FROM [OrderedItems] AS [OrderedItem] ORDER BY ABS([count]);',
+        oracle:
+          'SELECT COUNT("id") AS "count" FROM "OrderedItems" "OrderedItem" ORDER BY ABS("count");',
+      },
+    );
+  });
+
+  if (
+    sequelize.dialect.supports.groupedLimit &&
+    sequelize.dialect.supports.topLevelOrderByRequired
+  ) {
+    it('orders a grouped-limit derived table by the projected attribute name', () => {
+      const Item = sequelize.define(
+        'OrderedItem',
+        {
+          name: { type: DataTypes.STRING, columnName: 'name_column' },
+          groupId: DataTypes.INTEGER,
+        },
+        { timestamps: false },
+      );
+      const statement = queryGenerator.selectQuery(
+        Item.table,
+        {
+          attributes: ['id', ['name_column', 'name']],
+          groupedLimit: { limit: 1, on: 'groupId', values: [1, 2] },
+          order: [fn('LOWER', attribute('name'))],
+        },
+        Item,
+      );
+
+      expect(
+        statement.endsWith(`ORDER BY LOWER(${queryGenerator.quoteIdentifier('name')});`),
+      ).to.equal(true);
     });
   }
 

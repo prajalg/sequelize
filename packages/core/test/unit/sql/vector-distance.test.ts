@@ -54,6 +54,42 @@ describe('sql.vectorDistance', () => {
     vectorDistanceSupport &&
     vectorDistanceSupport.metrics.includes('cosine')
   ) {
+    for (const tableAs of [undefined, 'root_alias']) {
+      it(`qualifies vector operands without changing ordinary ORDER BY expressions (${tableAs ?? 'model alias'})`, () => {
+        const Item = sequelize.define(
+          'OrderedItem',
+          {
+            name: { type: DataTypes.STRING, columnName: 'name_column' },
+            embedding: { type: DataTypes.VECTOR(3), columnName: 'embedding_vector' },
+            comparison: { type: DataTypes.VECTOR(3), columnName: 'comparison_vector' },
+          },
+          { timestamps: false },
+        );
+        const alias = tableAs ?? Item.name;
+        const options = {
+          model: Item,
+          tableAs,
+          attributes: ['id'],
+          order: [
+            sql.fn('LOWER', sql.attribute('name')),
+            sql.fn(
+              'ABS',
+              sql.vectorDistance(
+                sql.cast(sql.attribute('embedding'), DataTypes.VECTOR(3)),
+                sql.attribute('comparison'),
+                'cosine',
+              ),
+            ),
+          ],
+        };
+
+        expectsql(() => queryGenerator.selectQuery(Item.table, options, Item), {
+          default: new Error('Function VectorDistance is not supported'),
+          oracle: `SELECT "id" FROM "OrderedItems" "${alias}" ORDER BY LOWER("name_column"), ABS(VECTOR_DISTANCE(CAST("${alias}"."embedding_vector" AS VECTOR(3, FLOAT32)), "${alias}"."comparison_vector", COSINE));`,
+        });
+      });
+    }
+
     it('binds a literal vector through the attribute VECTOR type', () => {
       let boundValue: unknown;
 

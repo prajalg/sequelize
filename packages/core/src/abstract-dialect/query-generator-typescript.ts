@@ -19,7 +19,10 @@ import { JsonPath } from '../expression-builders/json-path.js';
 import { List } from '../expression-builders/list.js';
 import { Literal } from '../expression-builders/literal.js';
 import { Value } from '../expression-builders/value.js';
-import type { VectorMetric } from '../expression-builders/vector-distance.js';
+import type {
+  VectorDistanceQueryContext,
+  VectorMetric,
+} from '../expression-builders/vector-distance.js';
 import { Where } from '../expression-builders/where.js';
 import type { ModelDefinition } from '../model-definition.js';
 import type { Attributes, Model, ModelStatic } from '../model.js';
@@ -152,11 +155,17 @@ export const TRUNCATE_TABLE_QUERY_SUPPORTABLE_OPTIONS = new Set<keyof TruncateTa
  */
 export interface EscapeOptions extends FormatWhereOptions {
   readonly type?: DataType | undefined;
+
+  /** @internal Only set while rendering the operands of a vector distance. */
+  readonly formatVectorOperand?: ((attribute: Attribute | AssociationPath) => string) | undefined;
 }
 
 export interface FormatWhereOptions extends Partial<BindParamOptions>, ParameterOptions {
   /** @internal */
   readonly vectorBindParam?: BindParamOptions['bindParam'] | undefined;
+
+  /** @internal ORDER BY scope, consumed only by VectorDistance. */
+  readonly vectorDistanceContext?: VectorDistanceQueryContext;
 
   /**
    * The model of the main alias. Used to determine the type & column name of attributes referenced in the where clause.
@@ -801,6 +810,13 @@ export class AbstractQueryGeneratorTypeScript<Dialect extends AbstractDialect = 
 
     if (piece instanceof Col) {
       return this.#internals.formatCol(piece, options);
+    }
+
+    if (
+      options?.formatVectorOperand &&
+      (piece instanceof Attribute || piece instanceof AssociationPath)
+    ) {
+      return options.formatVectorOperand(piece);
     }
 
     if (piece instanceof Attribute) {

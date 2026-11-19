@@ -3,6 +3,7 @@ import { VECTOR } from '../abstract-dialect/data-types.js';
 import type { AbstractDialect } from '../abstract-dialect/dialect.js';
 import type { EscapeOptions } from '../abstract-dialect/query-generator-typescript.js';
 import type { ModelDefinition } from '../model-definition.js';
+import type { ModelStatic } from '../model.js';
 import { extractModelDefinition } from '../utils/model-utils.js';
 import { AssociationPath } from './association-path.js';
 import { Attribute } from './attribute.js';
@@ -23,6 +24,24 @@ const VECTOR_METRICS = new Set<VectorMetric>([
   'hamming',
   'jaccard',
 ]);
+
+interface VectorDistanceInclude {
+  as: string;
+  subQuery?: boolean;
+  separate?: boolean;
+  include?: readonly VectorDistanceInclude[];
+}
+
+/** @internal Query scope supplied exclusively to vector-distance ORDER BY expressions. */
+export interface VectorDistanceQueryContext {
+  model?: ModelStatic | ModelDefinition | null;
+  mainAlias?: string;
+  derivedTable: boolean;
+  isSubQuery?: boolean;
+  attributes?: readonly unknown[];
+  include?: readonly VectorDistanceInclude[];
+  resolveAlias(tableAlias: string, attribute: string): string;
+}
 
 /**
  * Do not use me directly. Use `sql.vectorDistance` instead.
@@ -75,6 +94,16 @@ export class VectorDistance extends DialectAwareFn {
    * @param options Options used while escaping the expression.
    */
   applyForDialect(dialect: AbstractDialect, options?: EscapeOptions): string {
+    const context = options?.vectorDistanceContext;
+    if (context) {
+      options = {
+        ...options,
+        model: context.model,
+        mainAlias: context.mainAlias,
+        formatVectorOperand: attribute => formatOrderOperand(attribute, context, dialect, options),
+      };
+    }
+
     const left = this.args[0];
     const right = this.args[1];
     const leftSql = dialect.queryGenerator.escape(left, options);
@@ -96,6 +125,59 @@ export class VectorDistance extends DialectAwareFn {
 
     return dialect.queryGenerator.formatVectorDistance(leftSql, rightSql, this.metric);
   }
+}
+
+function formatOrderOperand(
+  attribute: Attribute | AssociationPath,
+  context: VectorDistanceQueryContext,
+  dialect: AbstractDialect,
+  options: EscapeOptions | undefined,
+): string {
+  const generator = dialect.queryGenerator;
+  const model = context.model ? extractModelDefinition(context.model) : null;
+  const operandOptions = { ...options, formatVectorOperand: undefined };
+
+  if (attribute instanceof AssociationPath) {
+    let includes = context.include;
+    for (const part of attribute.associationPath) {
+      const include = includes?.find(item => item.as === part);
+      if (!include || include.separate || (context.isSubQuery && !include.subQuery)) {
+        throw new Error(
+          `sql.vectorDistance cannot order by ${attribute.associationPath.join('.')}.${attribute.attributeName}: the association is not joined in this query scope.`,
+        );
+      }
+
+      // An inner join is not visible outside the derived table. Do not guess its projection.
+      if (context.derivedTable && !context.isSubQuery && include.subQuery) {
+        throw new Error(
+          'sql.vectorDistance cannot order by an association inside a pagination subquery. Select the distance with an alias and order by that alias instead.',
+        );
+      }
+
+      includes = include.include;
+    }
+
+    return generator.escape(attribute, operandOptions);
+  }
+
+  const columnName = model?.getColumnNameLoose(attribute.attributeName) ?? attribute.attributeName;
+  let outputName = columnName;
+  if (context.derivedTable && !context.isSubQuery) {
+    // A derived table exposes SELECT aliases, not necessarily the physical column names.
+    const projection = context.attributes?.find(
+      item => item === columnName || (Array.isArray(item) && item[0] === columnName),
+    );
+    if (projection === undefined && context.attributes && !context.attributes.includes('*')) {
+      throw new Error(
+        `sql.vectorDistance cannot order by ${attribute.attributeName}: the column is not selected by the pagination subquery. Include the attribute or select the distance with an alias.`,
+      );
+    }
+
+    outputName = Array.isArray(projection) ? projection[1] : columnName;
+    outputName = context.resolveAlias(context.mainAlias ?? '', outputName);
+  }
+
+  return generator.escape(new Attribute(outputName), { ...operandOptions, model: null });
 }
 
 /**

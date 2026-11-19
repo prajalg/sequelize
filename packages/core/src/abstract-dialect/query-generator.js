@@ -1465,7 +1465,18 @@ export class AbstractQueryGenerator extends AbstractQueryGeneratorTypeScript {
     // Add ORDER to sub or main query
     if (options.order) {
       const orders = this.getQueryOrders(
-        subQuery ? options : { ...options, model, mainAlias: mainTable.as || undefined },
+        {
+          ...options,
+          vectorDistanceContext: {
+            model: model ?? options.model,
+            mainAlias: mainTable.as || options.mainAlias,
+            derivedTable: Boolean(subQuery || options.groupedLimit),
+            attributes: options.attributes,
+            include: options.include,
+            resolveAlias: (tableAlias, attribute) =>
+              this._getAliasForField(tableAlias, attribute, options) ?? attribute,
+          },
+        },
         model,
         subQuery,
       );
@@ -2709,6 +2720,13 @@ export class AbstractQueryGenerator extends AbstractQueryGeneratorTypeScript {
   getQueryOrders(options, model, subQuery) {
     const mainQueryOrder = [];
     const subQueryOrder = [];
+    const subQueryOptions = {
+      ...options,
+      vectorDistanceContext: options.vectorDistanceContext && {
+        ...options.vectorDistanceContext,
+        isSubQuery: true,
+      },
+    };
 
     if (Array.isArray(options.order)) {
       for (const rawOrder of options.order) {
@@ -2724,7 +2742,7 @@ export class AbstractQueryGenerator extends AbstractQueryGeneratorTypeScript {
 
           if (subQuery && associationOrderInfo?.include?.subQuery) {
             const subOrder = [...order];
-            subQueryOrder.push(this.quote(subOrder, model, '->', options));
+            subQueryOrder.push(this.quote(subOrder, model, '->', subQueryOptions));
           }
 
           if (
@@ -2760,7 +2778,7 @@ export class AbstractQueryGenerator extends AbstractQueryGeneratorTypeScript {
               parent = null;
             }
 
-            subQueryOrder.push(this.quote(orderToQuote, parent, '->', options));
+            subQueryOrder.push(this.quote(orderToQuote, parent, '->', subQueryOptions));
           }
 
           if (subQuery && associationOrderInfo?.include?.subQuery) {
@@ -2790,12 +2808,11 @@ export class AbstractQueryGenerator extends AbstractQueryGeneratorTypeScript {
         }
       }
     } else if (options.order instanceof BaseSqlExpression) {
-      const sql = this.quote(options.order, model, '->', options);
       if (subQuery) {
-        subQueryOrder.push(sql);
+        subQueryOrder.push(this.quote(options.order, model, '->', subQueryOptions));
       }
 
-      mainQueryOrder.push(sql);
+      mainQueryOrder.push(this.quote(options.order, model, '->', options));
     } else {
       throw new TypeError('Order must be type of array or instance of a valid sequelize method.');
     }

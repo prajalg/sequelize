@@ -301,6 +301,160 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
       );
     });
 
+    describe('vector distance ORDER BY scopes', () => {
+      afterEach(() => sinon.restore());
+
+      const vars = beforeEach2(async () => {
+        const Collection = sequelize.define(
+          'ScopeCollection',
+          {
+            embedding: { type: DataTypes.VECTOR(3), columnName: 'embedding_vector' },
+            comparison: { type: DataTypes.VECTOR(3), columnName: 'comparison_vector' },
+          },
+          { timestamps: false },
+        );
+        const Item = sequelize.define(
+          'ScopeItem',
+          {
+            embedding: { type: DataTypes.VECTOR(3), columnName: 'embedding_vector' },
+            comparison: { type: DataTypes.VECTOR(3), columnName: 'comparison_vector' },
+          },
+          { timestamps: false },
+        );
+        Collection.hasMany(Item, { as: 'items', foreignKey: 'collectionId' });
+        Collection.belongsTo(Item, {
+          as: 'owner',
+          foreignKey: 'ownerId',
+          foreignKeyConstraints: false,
+        });
+        await sequelize.sync({ force: true });
+        // Insert the farther parent first, and reverse its child's vectors to detect wrong scopes.
+        const collections = await Collection.bulkCreate([
+          { embedding: [0, 1, 0], comparison: [1, 0, 0] },
+          { embedding: [1, 0, 0], comparison: [1, 0, 0] },
+        ]);
+        const items = await Item.bulkCreate([
+          { collectionId: collections[0].get('id'), embedding: [1, 0, 0], comparison: [0, 1, 0] },
+          { collectionId: collections[1].get('id'), embedding: [0, 1, 0], comparison: [0, 1, 0] },
+        ]);
+        await Promise.all(
+          collections.map(async (collection, index) =>
+            collection.update({ ownerId: items[index].get('id') }),
+          ),
+        );
+
+        return { Collection, collections };
+      });
+
+      for (const minifyAliases of [false, true]) {
+        it(`orders paginated parents using projected VECTOR names (minifyAliases: ${minifyAliases})`, async () => {
+          const result = await vars.Collection.findAll({
+            include: [{ association: 'items' }],
+            order: [sql.vectorDistance(sql.attribute('embedding'), [1, 0, 0], 'cosine')],
+            limit: 2,
+            minifyAliases,
+          });
+
+          expect(result.map(item => item.get('id'))).to.deep.equal(
+            [...vars.collections].reverse().map(item => item.get('id')),
+          );
+        });
+      }
+
+      it('resolves both column operands inside a wrapped vector distance', async () => {
+        const result = await vars.Collection.findAll({
+          attributes: ['id', 'embedding', 'comparison'],
+          include: [{ association: 'items' }],
+          order: [
+            sql.fn(
+              'ABS',
+              sql.vectorDistance(sql.attribute('embedding'), sql.attribute('comparison'), 'cosine'),
+            ),
+          ],
+          limit: 1,
+          minifyAliases: true,
+        });
+
+        expect(result[0].get('id')).to.equal(vars.collections[1].get('id'));
+      });
+
+      it('orders a grouped-limit result using projected VECTOR names', async () => {
+        const options = {
+          attributes: ['id', ['embedding_vector', 'embedding'] as [string, string]],
+          groupedLimit: {
+            limit: 1,
+            on: 'id',
+            values: vars.collections.map(item => item.get('id')),
+          },
+          order: [sql.vectorDistance(sql.attribute('embedding'), [1, 0, 0], 'cosine')],
+        };
+        const result = await vars.Collection.findAll(options);
+
+        expect(result.map(item => item.get('id'))).to.have.members(
+          vars.collections.map(item => item.get('id')),
+        );
+      });
+
+      it('reuses a selected distance alias when its VECTOR column is not projected', async () => {
+        const distance = sql.vectorDistance(sql.attribute('embedding'), [1, 0, 0], 'cosine');
+        const result = await vars.Collection.findAll({
+          attributes: ['id', [distance, 'distance']],
+          include: [{ association: 'items' }],
+          order: [[distance, 'ASC']],
+          limit: 1,
+          minifyAliases: true,
+        });
+
+        expect(result[0].get('id')).to.equal(vars.collections[1].get('id'));
+      });
+
+      it('rejects a VECTOR operand not projected by the pagination subquery before executing SQL', async () => {
+        const query = sinon.spy(sequelize, 'queryRaw');
+        await expect(
+          vars.Collection.findAll({
+            attributes: ['id'],
+            include: [{ association: 'items' }],
+            order: [sql.vectorDistance(sql.attribute('embedding'), [1, 0, 0], 'cosine')],
+            limit: 1,
+          }),
+        ).to.be.rejectedWith('the column is not selected by the pagination subquery');
+        expect(query).not.to.have.been.called;
+      });
+
+      it('rejects an included VECTOR operand outside the pagination subquery scope before executing SQL', async () => {
+        const query = sinon.spy(sequelize, 'queryRaw');
+        await expect(
+          vars.Collection.findAll({
+            include: [{ association: 'items' }],
+            order: [
+              sql.fn(
+                'ABS',
+                sql.vectorDistance(
+                  sql.attribute('embedding'),
+                  sql.attribute('$items.embedding$'),
+                  'cosine',
+                ),
+              ),
+            ],
+            limit: 1,
+          }),
+        ).to.be.rejectedWith('the association is not joined in this query scope');
+        expect(query).not.to.have.been.called;
+      });
+
+      it('rejects an inner association unavailable to the outer vector distance before executing SQL', async () => {
+        const query = sinon.spy(sequelize, 'queryRaw');
+        await expect(
+          vars.Collection.findAll({
+            include: [{ association: 'items' }, { association: 'owner', required: true }],
+            order: [sql.vectorDistance(sql.attribute('$owner.embedding$'), [1, 0, 0], 'cosine')],
+            limit: 1,
+          }),
+        ).to.be.rejectedWith('cannot order by an association inside a pagination subquery');
+        expect(query).not.to.have.been.called;
+      });
+    });
+
     it('resolves mapped VECTOR attributes through an include', async () => {
       class VectorCollection extends Model {}
 
