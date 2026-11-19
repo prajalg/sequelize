@@ -3,10 +3,19 @@ import type {
   InferAttributes,
   InferCreationAttributes,
   VectorElementType,
+  VectorMetric,
   VectorValue,
 } from '@sequelize/core';
-import { DataTypes, Model, ParameterStyle, QueryTypes, ValidationErrorItem } from '@sequelize/core';
+import {
+  DataTypes,
+  Model,
+  ParameterStyle,
+  QueryTypes,
+  ValidationErrorItem,
+  sql,
+} from '@sequelize/core';
 import { expect } from 'chai';
+import sinon from 'sinon';
 import {
   beforeEach2,
   getTestDialectTeaser,
@@ -186,6 +195,481 @@ describe(getTestDialectTeaser('DataTypes.VECTOR'), () => {
 
         expect(item.changed('embedding')).to.equal(false);
       });
+    });
+  }
+
+  const vectorDistanceSupport = dialect.supports.vectorDistance;
+  const supportsDistanceMetric = (metric: string, elementType: VectorElementType) =>
+    vectorDistanceSupport &&
+    vectorDistanceSupport.metrics.includes(metric as never) &&
+    vectorSupport.elementTypes[elementType];
+
+  if (supportsDistanceMetric('cosine', 'float32')) {
+    describe('cosine vector distance', () => {
+      const vars = beforeEach2(async () => {
+        class VectorItem extends Model<
+          InferAttributes<VectorItem>,
+          InferCreationAttributes<VectorItem>
+        > {
+          declare id: CreationOptional<number>;
+          declare embedding: VectorValue;
+          declare comparisonEmbedding: VectorValue;
+        }
+
+        VectorItem.init(
+          {
+            id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+            embedding: {
+              type: DataTypes.VECTOR(3),
+              columnName: 'embedding_vector',
+            },
+            comparisonEmbedding: DataTypes.VECTOR(3),
+          },
+          { sequelize, timestamps: false },
+        );
+        await VectorItem.sync({ force: true });
+
+        return { VectorItem };
+      });
+
+      it('orders rows by distance using a mapped attribute', async () => {
+        const items = await vars.VectorItem.bulkCreate([
+          { embedding: [1, 0, 0], comparisonEmbedding: [1, 0, 0] },
+          { embedding: [0, 1, 0], comparisonEmbedding: [0, 1, 0] },
+        ]);
+
+        const nearest = await vars.VectorItem.findAll({
+          order: [sql.vectorDistance(sql.attribute('embedding'), [1, 0, 0], 'cosine')],
+        });
+
+        expect(nearest.map(item => item.id)).to.deep.equal([items[0].id, items[1].id]);
+      });
+
+      it('supports column-to-column vector distances', async () => {
+        const item = await vars.VectorItem.create({
+          embedding: [1, 2, 3],
+          comparisonEmbedding: [1, 2, 3],
+        });
+
+        const nearest = await vars.VectorItem.findOne({
+          order: [
+            sql.vectorDistance(
+              sql.attribute('embedding'),
+              sql.attribute('comparisonEmbedding'),
+              'cosine',
+            ),
+          ],
+        });
+
+        expect(nearest?.id).to.equal(item.id);
+      });
+    });
+
+    it('qualifies the parent VECTOR attribute when an included model has the same column', async () => {
+      const Collection = sequelize.define(
+        'VectorCollection',
+        { embedding: { type: DataTypes.VECTOR(3), columnName: 'embedding_vector' } },
+        { timestamps: false },
+      );
+      const Item = sequelize.define(
+        'IncludedVectorItem',
+        { embedding: { type: DataTypes.VECTOR(3), columnName: 'embedding_vector' } },
+        { timestamps: false },
+      );
+      Collection.hasMany(Item, { as: 'items', foreignKey: 'collectionId' });
+      await sequelize.sync({ force: true });
+
+      const collections = await Collection.bulkCreate([
+        { embedding: [1, 0, 0] },
+        { embedding: [0, 1, 0] },
+      ]);
+      // Reverse the child vectors so ordering by the wrong table would reverse the results.
+      await Item.bulkCreate([
+        { collectionId: collections[0].get('id'), embedding: [0, 1, 0] },
+        { collectionId: collections[1].get('id'), embedding: [1, 0, 0] },
+      ]);
+
+      const result = await Collection.findAll({
+        // Do not select the parent vector: its output name could hide an ambiguous reference.
+        attributes: ['id'],
+        include: [{ association: 'items' }],
+        order: [sql.vectorDistance(sql.attribute('embedding'), [1, 0, 0], 'cosine')],
+      });
+
+      expect(result.map(item => item.get('id'))).to.deep.equal(
+        collections.map(item => item.get('id')),
+      );
+    });
+
+    describe('vector distance ORDER BY scopes', () => {
+      afterEach(() => sinon.restore());
+
+      const vars = beforeEach2(async () => {
+        const Collection = sequelize.define(
+          'ScopeCollection',
+          {
+            embedding: { type: DataTypes.VECTOR(3), columnName: 'embedding_vector' },
+            comparison: { type: DataTypes.VECTOR(3), columnName: 'comparison_vector' },
+          },
+          { timestamps: false },
+        );
+        const Item = sequelize.define(
+          'ScopeItem',
+          {
+            embedding: { type: DataTypes.VECTOR(3), columnName: 'embedding_vector' },
+            comparison: { type: DataTypes.VECTOR(3), columnName: 'comparison_vector' },
+          },
+          { timestamps: false },
+        );
+        Collection.hasMany(Item, { as: 'items', foreignKey: 'collectionId' });
+        Collection.belongsTo(Item, {
+          as: 'owner',
+          foreignKey: 'ownerId',
+          foreignKeyConstraints: false,
+        });
+        await sequelize.sync({ force: true });
+        // Insert the farther parent first, and reverse its child's vectors to detect wrong scopes.
+        const collections = await Collection.bulkCreate([
+          { embedding: [0, 1, 0], comparison: [1, 0, 0] },
+          { embedding: [1, 0, 0], comparison: [1, 0, 0] },
+        ]);
+        const items = await Item.bulkCreate([
+          { collectionId: collections[0].get('id'), embedding: [1, 0, 0], comparison: [0, 1, 0] },
+          { collectionId: collections[1].get('id'), embedding: [0, 1, 0], comparison: [0, 1, 0] },
+        ]);
+        await Promise.all(
+          collections.map(async (collection, index) =>
+            collection.update({ ownerId: items[index].get('id') }),
+          ),
+        );
+
+        return { Collection, collections };
+      });
+
+      for (const minifyAliases of [false, true]) {
+        it(`orders paginated parents using projected VECTOR names (minifyAliases: ${minifyAliases})`, async () => {
+          const result = await vars.Collection.findAll({
+            include: [{ association: 'items' }],
+            order: [sql.vectorDistance(sql.attribute('embedding'), [1, 0, 0], 'cosine')],
+            limit: 2,
+            minifyAliases,
+          });
+
+          expect(result.map(item => item.get('id'))).to.deep.equal(
+            [...vars.collections].reverse().map(item => item.get('id')),
+          );
+        });
+      }
+
+      for (const aliased of [false, true]) {
+        for (const minifyAliases of [false, true]) {
+          it(`orders paginated parents with ${aliased ? 'aliased' : 'bare'} Attribute projections (minifyAliases: ${minifyAliases})`, async () => {
+            const projection = aliased
+              ? ([sql.attribute('embedding'), 'selectedEmbedding'] as const)
+              : sql.attribute('embedding');
+            const result = await vars.Collection.findAll({
+              // @ts-expect-error -- Bare Attribute projections work at runtime but are not typed.
+              attributes: ['id', projection],
+              include: [{ association: 'items' }],
+              order: [sql.vectorDistance(sql.attribute('embedding'), [1, 0, 0], 'cosine')],
+              limit: 1,
+              minifyAliases,
+            });
+
+            expect(result[0].get('id')).to.equal(vars.collections[1].get('id'));
+          });
+        }
+      }
+
+      it('resolves both column operands inside a wrapped vector distance', async () => {
+        const result = await vars.Collection.findAll({
+          attributes: ['id', 'embedding', 'comparison'],
+          include: [{ association: 'items' }],
+          order: [
+            sql.fn(
+              'ABS',
+              sql.vectorDistance(sql.attribute('embedding'), sql.attribute('comparison'), 'cosine'),
+            ),
+          ],
+          limit: 1,
+          minifyAliases: true,
+        });
+
+        expect(result[0].get('id')).to.equal(vars.collections[1].get('id'));
+      });
+
+      it('orders a grouped-limit result using projected VECTOR names', async () => {
+        // The nearer row is inserted last in group A and first in group B.
+        const [nearer] = await vars.Collection.bulkCreate([
+          { ownerId: vars.collections[0].get('ownerId'), embedding: [1, 1, 0] },
+          { ownerId: vars.collections[1].get('ownerId'), embedding: [-1, 0, 0] },
+        ]);
+        const options = {
+          attributes: ['id', ['embedding_vector', 'embedding'] as [string, string]],
+          groupedLimit: {
+            limit: 1,
+            on: 'ownerId',
+            values: vars.collections.map(item => item.get('ownerId')),
+          },
+          order: [sql.vectorDistance(sql.attribute('embedding'), [1, 0, 0], 'cosine')],
+        };
+        const result = await vars.Collection.findAll(options);
+
+        const expectedIds = [vars.collections[1].get('id'), nearer.get('id')];
+        if (dialect.supports.topLevelOrderByRequired) {
+          expect(result.map(item => item.get('id'))).to.deep.equal(expectedIds);
+        } else {
+          expect(result.map(item => item.get('id'))).to.have.members(expectedIds);
+        }
+      });
+
+      it('reuses a selected distance alias when its VECTOR column is not projected', async () => {
+        const distance = sql.vectorDistance(sql.attribute('embedding'), [1, 0, 0], 'cosine');
+        const result = await vars.Collection.findAll({
+          attributes: ['id', [distance, 'distance']],
+          include: [{ association: 'items' }],
+          order: [[distance, 'ASC']],
+          limit: 1,
+          minifyAliases: true,
+        });
+
+        expect(result[0].get('id')).to.equal(vars.collections[1].get('id'));
+      });
+
+      it('rejects a VECTOR operand not projected by the pagination subquery before executing SQL', async () => {
+        const query = sinon.spy(sequelize, 'queryRaw');
+        await expect(
+          vars.Collection.findAll({
+            attributes: ['id'],
+            include: [{ association: 'items' }],
+            order: [sql.vectorDistance(sql.attribute('embedding'), [1, 0, 0], 'cosine')],
+            limit: 1,
+          }),
+        ).to.be.rejectedWith('the column is not selected by the pagination subquery');
+        expect(query).not.to.have.been.called;
+      });
+
+      it('rejects an included VECTOR operand outside the pagination subquery scope before executing SQL', async () => {
+        const query = sinon.spy(sequelize, 'queryRaw');
+        await expect(
+          vars.Collection.findAll({
+            include: [{ association: 'items' }],
+            order: [
+              sql.fn(
+                'ABS',
+                sql.vectorDistance(
+                  sql.attribute('embedding'),
+                  sql.attribute('$items.embedding$'),
+                  'cosine',
+                ),
+              ),
+            ],
+            limit: 1,
+          }),
+        ).to.be.rejectedWith('the association is not joined in this query scope');
+        expect(query).not.to.have.been.called;
+      });
+
+      it('rejects an inner association unavailable to the outer vector distance before executing SQL', async () => {
+        const query = sinon.spy(sequelize, 'queryRaw');
+        await expect(
+          vars.Collection.findAll({
+            include: [{ association: 'items' }, { association: 'owner', required: true }],
+            order: [sql.vectorDistance(sql.attribute('$owner.embedding$'), [1, 0, 0], 'cosine')],
+            limit: 1,
+          }),
+        ).to.be.rejectedWith('cannot order by an association inside a pagination subquery');
+        expect(query).not.to.have.been.called;
+      });
+    });
+
+    it('resolves mapped VECTOR attributes through an include', async () => {
+      class VectorCollection extends Model {}
+
+      class IncludedVectorItem extends Model {}
+
+      VectorCollection.init(
+        { id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true } },
+        { sequelize, timestamps: false },
+      );
+      IncludedVectorItem.init(
+        {
+          id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+          collectionId: DataTypes.INTEGER,
+          embedding: {
+            type: DataTypes.VECTOR(3),
+            columnName: 'embedding_vector',
+          },
+        },
+        { sequelize, timestamps: false },
+      );
+      VectorCollection.hasMany(IncludedVectorItem, {
+        as: 'items',
+        foreignKey: 'collectionId',
+      });
+      await sequelize.sync({ force: true });
+
+      const collection = await VectorCollection.create();
+      await IncludedVectorItem.create({
+        collectionId: collection.get('id'),
+        embedding: [1, 0, 0],
+      });
+
+      const result = await VectorCollection.findAll({
+        include: [{ association: 'items' }],
+        order: [sql.vectorDistance(sql.attribute('$items.embedding$'), [1, 0, 0], 'cosine')],
+      });
+
+      expect(result).to.have.length(1);
+    });
+  }
+
+  const distanceTestCases: ReadonlyArray<{
+    elementType: VectorElementType;
+    dimensions: number;
+    metric: VectorMetric;
+    value: VectorValue;
+    farValue: VectorValue;
+  }> = [
+    {
+      elementType: 'float64',
+      dimensions: 3,
+      metric: 'euclidean',
+      value: [1, 0, 0],
+      farValue: [4, 4, 4],
+    },
+    {
+      elementType: 'int8',
+      dimensions: 3,
+      metric: 'manhattan',
+      value: [1, 0, 0],
+      farValue: [-1, 0, 0],
+    },
+    {
+      elementType: 'binary' as const,
+      dimensions: 24,
+      metric: 'hamming',
+      value: new Uint8Array([0b1111_0000, 0, 0]),
+      farValue: new Uint8Array([0b0000_1111, 0, 0]),
+    },
+  ];
+
+  for (const testCase of distanceTestCases) {
+    if (!supportsDistanceMetric(testCase.metric, testCase.elementType)) {
+      continue;
+    }
+
+    describe(`${testCase.elementType} vector distance`, () => {
+      if (testCase.elementType === 'binary') {
+        skipSuiteIfOracleVersionBelow('23.5.0');
+      }
+
+      it(`orders rows by ${testCase.metric} distance using a literal vector`, async () => {
+        class VectorItem extends Model<
+          InferAttributes<VectorItem>,
+          InferCreationAttributes<VectorItem>
+        > {
+          declare id: CreationOptional<number>;
+          declare embedding: VectorValue;
+        }
+
+        VectorItem.init(
+          {
+            id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+            embedding: DataTypes.VECTOR({
+              dimensions: testCase.dimensions,
+              elementType: testCase.elementType,
+            }),
+          },
+          { sequelize, timestamps: false },
+        );
+        await VectorItem.sync({ force: true });
+        // Insert the farther row first so insertion order cannot satisfy the assertion.
+        const items = await VectorItem.bulkCreate([
+          { embedding: testCase.farValue },
+          { embedding: testCase.value },
+        ]);
+
+        const nearest = await VectorItem.findAll({
+          order: [sql.vectorDistance(sql.attribute('embedding'), testCase.value, testCase.metric)],
+        });
+
+        expect(nearest.map(item => item.id)).to.deep.equal([items[1].id, items[0].id]);
+      });
+    });
+  }
+
+  if (supportsDistanceMetric('dot', 'float32')) {
+    it('treats dot as a distance with smaller values ranked first', async () => {
+      class VectorItem extends Model<
+        InferAttributes<VectorItem>,
+        InferCreationAttributes<VectorItem>
+      > {
+        declare id: CreationOptional<number>;
+        declare embedding: VectorValue;
+      }
+
+      VectorItem.init(
+        {
+          id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+          embedding: DataTypes.VECTOR(3),
+        },
+        { sequelize, timestamps: false },
+      );
+      await VectorItem.sync({ force: true });
+      const items = await VectorItem.bulkCreate([
+        { embedding: [1, 0, 0] },
+        { embedding: [-1, 0, 0] },
+      ]);
+
+      const nearest = await VectorItem.findAll({
+        order: [sql.vectorDistance(sql.attribute('embedding'), [1, 0, 0], 'dot')],
+      });
+
+      expect(nearest.map(item => item.id)).to.deep.equal([items[0].id, items[1].id]);
+    });
+  }
+
+  if (
+    supportsDistanceMetric('cosine', 'float32') &&
+    vectorSupport.elementTypes.float32!.maxDimensions >= 1536
+  ) {
+    it('orders documents by a bound 1536-dimension query vector', async () => {
+      const vectorType = DataTypes.VECTOR(1536).toDialectDataType(dialect);
+      const Document = sequelize.define(
+        'VectorDocument',
+        { embedding: vectorType },
+        { timestamps: false },
+      );
+      await Document.sync({ force: true });
+
+      const queryVector = Array.from({ length: 1536 }, (_, index) => Math.sin(index + 1));
+      // A realistic query vector exceeds Oracle's 4000-byte quoted-literal limit.
+      expect(JSON.stringify(queryVector).length).to.be.greaterThan(4000);
+      const documents = await Document.bulkCreate([
+        { embedding: queryVector.map(value => -value) },
+        { embedding: queryVector },
+      ]);
+
+      const querySpy = sinon.spy(sequelize, 'queryRaw');
+      try {
+        const nearest = await Document.findAll({
+          attributes: ['id'],
+          order: [sql.vectorDistance(sql.attribute('embedding'), queryVector, 'cosine')],
+          limit: 2,
+        });
+
+        expect(nearest.map(document => document.get('id'))).to.deep.equal([
+          documents[1].get('id'),
+          documents[0].get('id'),
+        ]);
+        expect(querySpy).to.have.been.calledOnce;
+        expect(Object.values(querySpy.firstCall.args[1]?.bind ?? {})).to.deep.include(
+          vectorType.toBindableValue(queryVector),
+        );
+      } finally {
+        querySpy.restore();
+      }
     });
   }
 

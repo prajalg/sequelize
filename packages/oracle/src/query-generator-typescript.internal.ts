@@ -12,6 +12,7 @@ import type {
   ShowConstraintsQueryOptions,
   TableOrModel,
   TruncateTableQueryOptions,
+  VectorMetric,
 } from '@sequelize/core';
 import { AbstractQueryGenerator, DataTypes, IsolationLevel, ParameterStyle } from '@sequelize/core';
 import { attributeTypeToSql } from '@sequelize/core/_non-semver-use-at-your-own-risk_/abstract-dialect/data-types-utils.js';
@@ -133,6 +134,20 @@ export class OracleQueryGeneratorTypeScript extends AbstractQueryGenerator {
     if (attribute.autoIncrement) {
       throw new Error(`Oracle VECTOR column ${columnName} does not support autoIncrement.`);
     }
+  }
+
+  formatVectorDistance(left: string, right: string, metric: VectorMetric): string {
+    const oracleMetric: Record<VectorMetric, string> = {
+      cosine: 'COSINE',
+      euclidean: 'EUCLIDEAN',
+      euclideanSquared: 'EUCLIDEAN_SQUARED',
+      manhattan: 'MANHATTAN',
+      dot: 'DOT',
+      hamming: 'HAMMING',
+      jaccard: 'JACCARD',
+    };
+
+    return `VECTOR_DISTANCE(${left}, ${right}, ${oracleMetric[metric]})`;
   }
 
   describeTableQuery(tableName: TableOrModel, options: BindCatalogQueryOptions): BoundCatalogQuery;
